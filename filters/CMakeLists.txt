@@ -12,7 +12,7 @@ find_package(OCLFFT)
 #{{{ Dependencies
 
 pkg_check_modules(UFO ufo>=${PKG_UFO_CORE_MIN_REQUIRED} REQUIRED)
-MESSAGE(${UFO_KERNELDIR})
+#MESSAGE(${UFO_KERNELDIR})
 #MESSAGE(${UFO_LIBRARY_DIRS})
 link_directories(${UFO_LIBRARY_DIRS})
 include_directories(${UFO_INCLUDE_DIRS}

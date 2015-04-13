@@ -11,7 +11,7 @@ number_of_images = 1
 pm = Ufo.PluginManager()
 
 read = pm.get_task('read')
-read.set_properties(path='/home/chuan/DATA/upiv/Image0.tif', end=number_of_images)
+read.set_properties(path='/home/chuan/DATA/upiv/Image0.tif', number=number_of_images)
 
 write = pm.get_task('write')
 write.set_properties(filename='res/foo-%05i.tif')
