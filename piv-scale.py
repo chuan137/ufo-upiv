@@ -1,11 +1,11 @@
-#!/home/chuan/.virtualenv/ufo/bin/python
+#!/usr/bin/env python
 from gi.repository import Ufo
 
 POSTDENOISE = False
 DENOISE = False
 
 scale            = 2
-number_of_images = 2
+number_of_images = 100
 
 ring_start     = 10 / scale
 ring_end       = 30 / scale
@@ -60,9 +60,9 @@ duplicater.set_properties(dup_count=ring_count)
 ring_pattern.set_properties(ring_start=ring_start, ring_end=ring_end, 
                             ring_step=ring_step, ring_thickness=ring_thickness,
                             width=1024/scale, height=1024/scale)
-ring_pattern_loop.set_properties(loop=1)
+ring_pattern_loop.set_properties(dup_count=number_of_images, loop=1)
 hessian_kernel.set_properties(sigma=2./scale, width=1024/scale, height=1024/scale)
-hessian_kernel_loop.set_properties(loop=1)
+hessian_kernel_loop.set_properties(dup_count=number_of_images, loop=1)
 brighten.set_properties(expression="(exp(v*10000000)-1)")
 filter_particle.set_properties(min=0.0001, threshold=0.8)
 concatenate_result.set_properties(max_count=100, ring_count=ring_count)

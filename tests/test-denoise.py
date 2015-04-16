@@ -1,4 +1,4 @@
-#!/home/chuan/.virtualenv/ufo/bin/python
+#!/usr/bin/env python
 import sys, getopt
 from gi.repository import Ufo
 import numpy as np
@@ -12,7 +12,7 @@ denoise = pm.get_task('denoise')
 contrast = pm.get_task('contrast')
 
 # Settings
-img_path = 'input0.tif'
+img_path = 'inputs/input0.tif'
 out_path = 'denoise/res.tif'
 argv = sys.argv[1:]
 try:

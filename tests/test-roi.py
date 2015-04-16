@@ -1,4 +1,4 @@
-#!/home/chuan/.virtualenv/ufo/bin/python
+#!/usr/bin/env python
 import sys, getopt
 from gi.repository import Ufo
 import numpy as np

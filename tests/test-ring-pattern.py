@@ -1,10 +1,9 @@
-#!/home/chuan/.virtualenv/ufo/bin/python
+#!/usr/bin/env python
 from gi.repository import Ufo
 import numpy as np
 import tifffile
 import threading
 import time
-from ufo.numpy import asarray, fromarray
 
 # Settings
 

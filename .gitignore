@@ -4,3 +4,4 @@ filters/.build
 *.so
 *.o
 *.pyc
+res
