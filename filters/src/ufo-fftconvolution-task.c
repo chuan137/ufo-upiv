@@ -50,6 +50,9 @@ struct _UfoFftconvolutionTaskPrivate {
     cl_command_queue cmd_queue;
     gsize width, height, width_p, height_p, batch_size;
     UfoProfiler *profiler;
+    clFFT_Plan fft_plan;
+    UfoBuffer *fft_buffer_1, *fft_buffer_2;
+    cl_mem fft_mem_1, fft_mem_2;
 };
 
 static void ufo_task_interface_init (UfoTaskIface *iface);
@@ -95,11 +98,9 @@ ufo_fftconvolution_task_setup (UfoTask *task,
     priv->context = ufo_resources_get_context (resources);
     priv->cmd_queue = ufo_gpu_node_get_cmd_queue (node);
 
-    UFO_RESOURCES_CHECK_CLERR (clRetainContext (priv->context));
+    priv->fft_plan = NULL;
 
-    if (priv->kernel_padzero != NULL) {
-        UFO_RESOURCES_CHECK_CLERR (clRetainKernel (priv->kernel_padzero));
-    }
+    UFO_RESOURCES_CHECK_CLERR (clRetainContext (priv->context));
 }
 
 static void
@@ -134,6 +135,33 @@ ufo_fftconvolution_task_get_requisition (UfoTask *task,
     requisition->dims[0] = priv->width;
     requisition->dims[1] = priv->height;
     requisition->dims[2] = priv->batch_size;
+
+    // create Plan here when it does not exists yet
+    if (priv->fft_plan == NULL) {
+        cl_int cl_err;
+        UfoRequisition req_fft;
+        clFFT_Dim3 fft_size;
+        clFFT_Dimension dimension = clFFT_2D;
+
+        req_fft.n_dims = 2;
+        req_fft.dims[0] = 2*priv->width_p;
+        req_fft.dims[1] = priv->height_p;
+
+        fft_size.x = req_fft.dims[0] / 2;
+        fft_size.y = req_fft.dims[1];
+        fft_size.z = 1;
+
+        priv->fft_buffer_1 = ufo_buffer_new(&req_fft, priv->context);
+        priv->fft_buffer_2 = ufo_buffer_new(&req_fft, priv->context);
+        priv->fft_mem_1 = ufo_buffer_get_device_array(priv->fft_buffer_1, priv->cmd_queue);
+        priv->fft_mem_2 = ufo_buffer_get_device_array(priv->fft_buffer_2, priv->cmd_queue);
+
+        priv->fft_plan = clFFT_CreatePlan (priv->context,
+                                     fft_size,
+                                     dimension,
+                                     clFFT_InterleavedComplexFormat,
+                                     &cl_err);
+    }
 }
 
 static guint
@@ -345,11 +373,10 @@ ufo_fftconvolution_task_process (UfoTask *task,
                          UfoRequisition *requisition)
 {
     UfoRequisition req_tmp, req_fft;
-    UfoBuffer *tmp_buffer, *fft_buffer_1, *fft_buffer_2;
+    UfoBuffer *tmp_buffer;
     gsize global_work_size[2]; 
-    cl_int cl_err;
     cl_event event;
-    cl_mem img_mem, ker_mem, fft_img_mem, fft_ker_mem, out_mem, tmp_mem, fft_mem_1, fft_mem_2;
+    cl_mem img_mem, ker_mem, fft_img_mem, fft_ker_mem, out_mem, tmp_mem;
 
     UfoFftconvolutionTaskPrivate *priv;
     priv = UFO_FFTCONVOLUTION_TASK_GET_PRIVATE (task);
@@ -361,51 +388,28 @@ ufo_fftconvolution_task_process (UfoTask *task,
     req_tmp.dims[0] = priv->width_p;
     req_tmp.dims[1] = priv->height_p;
 
-    req_fft.n_dims = 2;
-    req_fft.dims[0] = 2*priv->width_p;
-    req_fft.dims[1] = priv->height_p;
-
     
     /*printf("fft conv req_tmp \t%d %d\n", req_tmp.dims[0], req_tmp.dims[1]);*/
     /*printf("fft conv req_fft \t%d %d\n", req_fft.dims[0], req_fft.dims[1]);*/
     tmp_buffer      = ufo_buffer_new(&req_tmp, priv->context);
-    fft_buffer_1    = ufo_buffer_new(&req_fft, priv->context);
-    fft_buffer_2    = ufo_buffer_new(&req_fft, priv->context);
-
     //img_mem  = ufo_buffer_get_device_array(inputs[0], priv->cmd_queue);
     //ker_mem  = ufo_buffer_get_device_array(inputs[1], priv->cmd_queue);
     //out_mem  = ufo_buffer_get_device_array(output, priv->cmd_queue);
     //tmp_mem  = ufo_buffer_get_device_array(tmp_buffer, priv->cmd_queue);
-    fft_mem_1  = ufo_buffer_get_device_array(fft_buffer_1, priv->cmd_queue);
-    fft_mem_2  = ufo_buffer_get_device_array(fft_buffer_2, priv->cmd_queue);
-
     // fill tmp buffer with zeros 
     ufo_buffer_fill_zero( priv->cmd_queue, &( priv->kernel_fillzero ), tmp_buffer );
 
     // prepare the input image for FFT
     // pad zero to input image and save it to fft_buffer_1
-    ufo_buffer_pad_zero( priv->cmd_queue, &( priv->kernel_padzero ), inputs[0], fft_buffer_1 );
+    ufo_buffer_pad_zero( priv->cmd_queue, &( priv->kernel_padzero ), inputs[0], priv->fft_buffer_1 );
 
     // FFT on the input image
 #ifdef HAVE_AMD
 #else
 
-    clFFT_Dim3 fft_size;
-    clFFT_Dimension dimension = clFFT_2D;
-
-    fft_size.x = req_fft.dims[0] / 2;
-    fft_size.y = req_fft.dims[1];
-    fft_size.z = 1;
-
-    clFFT_Plan fft_plan = clFFT_CreatePlan (priv->context,
-                                            fft_size,
-                                            dimension,
-                                            clFFT_InterleavedComplexFormat,
-                                            &cl_err);
-
-    clFFT_ExecuteInterleaved_Ufo (priv->cmd_queue, fft_plan,
+    clFFT_ExecuteInterleaved_Ufo (priv->cmd_queue, priv->fft_plan,
                                   1, clFFT_Forward,
-                                  fft_mem_1, fft_mem_1,
+                                  priv->fft_mem_1, priv->fft_mem_1,
                                   1, &event, NULL, priv->profiler);
 #endif
 
@@ -414,25 +418,25 @@ ufo_fftconvolution_task_process (UfoTask *task,
         /*printf("\n");*/
         // copy buffer
         ufo_buffer_copy_page(inputs[1], tmp_buffer, i, priv->cmd_queue);
-        ufo_buffer_pad_zero( priv->cmd_queue, &( priv->kernel_padzero ), tmp_buffer, fft_buffer_2 );
+        ufo_buffer_pad_zero( priv->cmd_queue, &( priv->kernel_padzero ), tmp_buffer, priv->fft_buffer_2 );
         
 #ifdef HAVE_AMD
 #else
-        clFFT_ExecuteInterleaved_Ufo (priv->cmd_queue, fft_plan,
+        clFFT_ExecuteInterleaved_Ufo (priv->cmd_queue, priv->fft_plan,
                                       1, clFFT_Forward,
-                                      fft_mem_2, fft_mem_2,
+                                      priv->fft_mem_2, priv->fft_mem_2,
                                       1, &event, NULL, priv->profiler);
 #endif
  
         UFO_RESOURCES_CHECK_CLERR (
                    clSetKernelArg ( priv->kernel_fftmult, 0, 
-                                    sizeof (cl_mem), (gpointer) &fft_mem_1));
+                                    sizeof (cl_mem), (gpointer) &( priv->fft_mem_1 )));
         UFO_RESOURCES_CHECK_CLERR (
                    clSetKernelArg ( priv->kernel_fftmult, 1, 
-                                    sizeof (cl_mem), (gpointer) &fft_mem_2));
+                                    sizeof (cl_mem), (gpointer) &( priv->fft_mem_2 )));
         UFO_RESOURCES_CHECK_CLERR (
                    clSetKernelArg ( priv->kernel_fftmult, 2, 
-                                    sizeof (cl_mem), (gpointer) &fft_mem_2));
+                                    sizeof (cl_mem), (gpointer) &( priv->fft_mem_2 )));
         UFO_RESOURCES_CHECK_CLERR (
            clEnqueueNDRangeKernel ( priv->cmd_queue, priv->kernel_fftmult,
                                     2, NULL, global_work_size, NULL,
@@ -441,14 +445,14 @@ ufo_fftconvolution_task_process (UfoTask *task,
         // Inverse FFT
 #ifdef HAVE_AMD
 #else
-        clFFT_ExecuteInterleaved_Ufo (priv->cmd_queue, fft_plan,
+        clFFT_ExecuteInterleaved_Ufo (priv->cmd_queue, priv->fft_plan,
                                       1, clFFT_Inverse,
                                       //priv->batch_size, clFFT_Inverse,
-                                      fft_mem_2, fft_mem_2,
+                                      priv->fft_mem_2, priv->fft_mem_2,
                                       1, &event, NULL, priv->profiler);
 #endif
 
-        ufo_buffer_fftpack( priv->cmd_queue,  &priv->kernel_fftpack, fft_buffer_2, tmp_buffer);
+        ufo_buffer_fftpack( priv->cmd_queue,  &priv->kernel_fftpack, priv->fft_buffer_2, tmp_buffer);
 
         ufo_buffer_past_page(priv->cmd_queue, tmp_buffer, output, i);
     }
@@ -461,11 +465,6 @@ ufo_fftconvolution_task_process (UfoTask *task,
     //UFO_RESOURCES_CHECK_CLERR (clReleaseEvent (event));
 
     g_object_unref(tmp_buffer);
-    g_object_unref(fft_buffer_1);
-    g_object_unref(fft_buffer_2);
-
-    clFFT_DestroyPlan (fft_plan);        
-
     return TRUE;
 }
 
@@ -507,6 +506,13 @@ static void
 ufo_fftconvolution_task_finalize (GObject *object)
 {
     G_OBJECT_CLASS (ufo_fftconvolution_task_parent_class)->finalize (object);
+    UfoFftconvolutionTaskPrivate *priv = UFO_FFTCONVOLUTION_TASK_GET_PRIVATE (object);
+
+    // release kernel and destroy FFT PLAN
+    // destroy fft_buffer
+    g_object_unref(priv->fft_buffer_1);
+    g_object_unref(priv->fft_buffer_2);
+    clFFT_DestroyPlan(priv->fft_plan);        
 }
 
 static void

@@ -5,3 +5,6 @@ filters/.build
 *.o
 *.pyc
 res
+tests/**/
+test.py
+tools/

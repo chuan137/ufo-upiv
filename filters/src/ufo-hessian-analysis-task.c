@@ -163,6 +163,8 @@ ufo_hessian_analysis_task_process (UfoTask *task,
     global_work_size[1] = (gsize) priv->height;
     //printf("%d %d\n", global_work_size[0], global_work_size[1]);
 
+//#define EIGEN
+#ifndef EIGEN
     UFO_RESOURCES_CHECK_CLERR (
                clSetKernelArg ( priv->kernel_det, 0, 
                                 sizeof (cl_mem), (gpointer) &out_mem));
@@ -173,6 +175,19 @@ ufo_hessian_analysis_task_process (UfoTask *task,
        clEnqueueNDRangeKernel ( priv->cmd_queue, priv->kernel_det,
                                 2, NULL, global_work_size, NULL,
                                 0, NULL, &event));
+#else
+    UFO_RESOURCES_CHECK_CLERR (
+               clSetKernelArg ( priv->kernel_eigval, 0, 
+                                sizeof (cl_mem), (gpointer) &out_mem));
+    UFO_RESOURCES_CHECK_CLERR (
+               clSetKernelArg ( priv->kernel_eigval, 1, 
+                                sizeof (cl_mem), (gpointer) &in_mem));
+    UFO_RESOURCES_CHECK_CLERR (
+       clEnqueueNDRangeKernel ( priv->cmd_queue, priv->kernel_eigval,
+                                2, NULL, global_work_size, NULL,
+                                0, NULL, &event));
+#endif
+
 
     UFO_RESOURCES_CHECK_CLERR (clReleaseEvent (event));
 
