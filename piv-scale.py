@@ -1,11 +1,29 @@
 #!/usr/bin/env python
 from gi.repository import Ufo
 
+class TaskGraph(Ufo.TaskGraph):
+    def connect_branch(self, node_list):
+        for i in range(len(node_list)-1):
+            n0 = node_list[i]
+            n1 = node_list[i+1]
+            self.connect_nodes(n0, n1)
+    def merge_branch(self, nlist1, nlist2, node):
+        if isinstance(nlist1, list):
+            n1 = nlist1[-1]
+        else:
+            n1 = nlist1
+        if isinstance(nlist2, list):
+            n2 = nlist2[-1]
+        else:
+            n2 = nlist2
+        self.connect_nodes_full(n1, node, 0)
+        self.connect_nodes_full(n2, node, 1)
+
 POSTDENOISE = False
 DENOISE = False
 
 scale            = 2
-number_of_images = 100
+number_of_images = 120
 
 ring_start     = 10 / scale
 ring_end       = 30 / scale
@@ -16,114 +34,128 @@ ring_thickness = 6 / scale
 img_path = '/home/chuan/DATA/upiv/Image0.tif'; xshift = 0; yshfit = 200
 img_path = '/home/chuan/DATA/upiv/60_Luft_frame50.tif'; xshift = 150; yshift = 0
 img_path = 'input/input-stack.tif'; xshift = 150; yshift = 0
-res_path = 'res/HT.tif'
+img_path = 'input/sampleC-files/'; xshift = 150; yshift = 0
+out_file = 'res/HT.tif'
 
+# Configure Ufo Filters
 pm = Ufo.PluginManager()
 
 read = pm.get_task('read')
-reduce = pm.get_task('reduce')
+read.props.path = img_path
+read.props.number = number_of_images
+
 write = pm.get_task('write')
-duplicater = pm.get_task('buffer')
+write.props.filename = out_file
+
 cutroi = pm.get_task('cut-roi')
+cutroi.props.x = xshift
+cutroi.props.y = yshift
+cutroi.props.width = 1024
+cutroi.props.height = 1024
+
 denoise = pm.get_task('denoise')
-denoise_post_HT = pm.get_task('denoise')
+denoise.props.matrix_size = int(14/scale)
+
 contrast = pm.get_task('contrast')
-contrast_post_HT = pm.get_task('contrast')
-ring_pattern = pm.get_task('ring_pattern')
-hough_convolve = pm.get_task('fftconvolution')
-hessian_convolve = pm.get_task('fftconvolution')
-hessian_kernel = pm.get_task('hessian_kernel')
-hessian_kernel_loop = pm.get_task('buffer')
-hessian_analysis = pm.get_task('hessian_analysis')
-brighten = pm.get_task('calculate')
-filter_particle = pm.get_task('filter_particle')
-concatenate_result = pm.get_task('concatenate_result')
+contrast.props.remove_high = 0
+
+gen_ring_patterns = pm.get_task('ring_pattern')
+gen_ring_patterns.props.ring_start = ring_start
+gen_ring_patterns.props.ring_end   = ring_end
+gen_ring_patterns.props.ring_step  = ring_step
+gen_ring_patterns.props.ring_thickness = ring_thickness
+gen_ring_patterns.props.width  = 1024 / scale
+gen_ring_patterns.props.height = 1024 / scale
+
 ring_pattern_loop = pm.get_task('buffer')
+ring_pattern_loop.props.dup_count = number_of_images 
+ring_pattern_loop.props.loop = 1 
 
-multi_search = pm.get_task('multi_search')
-remove_circle = pm.get_task('remove_circle')
-get_dup_circ = pm.get_task('get_dup_circ')
-replicater = pm.get_task('buffer')
-ringwriter = pm.get_task('ringwriter')
+hough_convolve = pm.get_task('fftconvolution')
 
-broadcast_contrast = Ufo.CopyTask()
+hessian_kernel = pm.get_task('hessian_kernel')
+hessian_kernel.props.sigma = 2. / scale
+hessian_kernel.props.width = 1024 / scale
+hessian_kernel.props.height = 1024 / scale
+
+hessian_kernel_loop = pm.get_task('buffer')
+hessian_kernel_loop.props.dup_count = number_of_images
+hessian_kernel_loop.props.loop = 1 
+
+hessian_convolve = pm.get_task('fftconvolution')
+hessian_analysis = pm.get_task('hessian_analysis')
+
+duplicater = pm.get_task('buffer')
+duplicater.props.dup_count = ring_count
+
+reduce_scale = pm.get_task('reduce')
 null = pm.get_task('null')
 
-read.set_properties(path=img_path, number=number_of_images)
-cutroi.set_properties(x=xshift, y=yshift, width=1024, height=1024)
-write.set_properties(filename=res_path)
-denoise.set_properties(matrix_size=14/scale)
-denoise_post_HT.set_properties(matrix_size=3/scale)
-contrast.set_properties(remove_high=0)
-contrast_post_HT.set_properties(remove_high=0)
-duplicater.set_properties(dup_count=ring_count)
-ring_pattern.set_properties(ring_start=ring_start, ring_end=ring_end, 
-                            ring_step=ring_step, ring_thickness=ring_thickness,
-                            width=1024/scale, height=1024/scale)
-ring_pattern_loop.set_properties(dup_count=number_of_images, loop=1)
-hessian_kernel.set_properties(sigma=2./scale, width=1024/scale, height=1024/scale)
-hessian_kernel_loop.set_properties(dup_count=number_of_images, loop=1)
-brighten.set_properties(expression="(exp(v*10000000)-1)")
-filter_particle.set_properties(min=0.0001, threshold=0.8)
-concatenate_result.set_properties(max_count=100, ring_count=ring_count)
+broadcast_contrast = Ufo.CopyTask()
+
+# connect ufo task graph
+g = TaskGraph()
+
+## # read image and pre-processing
+## g.connect_nodes(read, cutroi)
+
+## if DENOISE:
+##     if scale == 2:
+##         g.connect_nodes(cutroi, reduce_scale)
+##         g.connect_nodes(reduce_scale, denoise)
+##         g.connect_nodes(denoise, contrast)
+##     else:
+##         g.connect_nodes(cutroi, denoise)
+##         g.connect_nodes(denoise, contrast)
+## else:
+##     if scale == 2:
+##         g.connect_nodes(cutroi, reduce_scale)
+##         g.connect_nodes(reduce_scale, contrast)
+##     else:
+##         g.connect_nodes(cutroi, contrast)
+## g.connect_nodes(contrast, broadcast_contrast)
+## # Hough transform
+## g.connect_nodes(gen_ring_patterns, ring_pattern_loop)
+## g.connect_nodes_full(broadcast_contrast, hough_convolve, 0)
+## g.connect_nodes_full(ring_pattern_loop, hough_convolve, 1)
+##
+## # Blob detection
+## if POSTDENOISE:
+##     g.connect_nodes(hough_convolve, denoise_post_HT)
+##     g.connect_nodes_full(denoise_post_HT, hessian_convolve, 0)
+## else:
+##     g.connect_nodes_full(hough_convolve, hessian_convolve, 0)
+## g.connect_nodes(hessian_kernel, hessian_kernel_loop)
+## g.connect_nodes_full(hessian_kernel_loop, hessian_convolve, 1)
+## g.connect_nodes(hessian_convolve, hessian_analysis)
+## g.connect_nodes(hessian_analysis, write)
 
 
-g = Ufo.TaskGraph()
-
-# read image and pre-processing
-g.connect_nodes(read, cutroi)
-
-if DENOISE:
-    if scale == 2:
-        g.connect_nodes(cutroi, reduce)
-        g.connect_nodes(reduce, denoise)
-        g.connect_nodes(denoise, contrast)
-    else:
-        g.connect_nodes(cutroi, denoise)
-        g.connect_nodes(denoise, contrast)
+if False:
+    branch1 = [read, cutroi, reduce_scale, contrast, broadcast_contrast]
+    #branch1 = [read, cutroi, reduce_scale, denoise, contrast, broadcast_contrast]
+    branch2 = [gen_ring_patterns, ring_pattern_loop]
+    
+    g.connect_branch(branch1)
+    g.connect_branch(branch2)
+    g.merge_branch(branch1, branch2, hough_convolve)
+    
+    g.connect_branch([hessian_kernel, hessian_kernel_loop])
+    g.merge_branch(hough_convolve, hessian_kernel_loop, hessian_convolve)
+    
+    branch4 = [hessian_convolve, hessian_analysis, write]
+    g.connect_branch(branch4)
 else:
-    if scale == 2:
-        g.connect_nodes(cutroi, reduce)
-        g.connect_nodes(reduce, contrast)
-    else:
-        g.connect_nodes(cutroi, contrast)
-g.connect_nodes(contrast, broadcast_contrast)
+    blur0 = pm.get_task('blur')
+    blur1 = pm.get_task('blur')
+    blur2 = pm.get_task('blur')
+    null = pm.get_task('null')
+    branch = [read, blur0, blur1, blur2, write]
+    g.connect_branch(branch)
 
-# Hough transform
-g.connect_nodes(ring_pattern, ring_pattern_loop)
-g.connect_nodes_full(broadcast_contrast, hough_convolve, 0)
-g.connect_nodes_full(ring_pattern_loop, hough_convolve, 1)
 
-# Blob detection
-if POSTDENOISE:
-    g.connect_nodes(hough_convolve, denoise_post_HT)
-    g.connect_nodes_full(denoise_post_HT, hessian_convolve, 0)
-else:
-    g.connect_nodes_full(hough_convolve, hessian_convolve, 0)
-g.connect_nodes(hessian_kernel, hessian_kernel_loop)
-g.connect_nodes_full(hessian_kernel_loop, hessian_convolve, 1)
-g.connect_nodes(hessian_convolve, hessian_analysis)
-g.connect_nodes(hessian_analysis, write)
-
-# Blob detection again
-# Post-processing
-#g.connect_nodes(fft_convolve, filter_particle)
-#g.connect_nodes(filter_particle, concatenate_result)
-#g.connect_nodes(concatenate_result, ringwriter)
-#g.connect_nodes(concatenate_result, write)
-
-# Post-processing
-#g.connect_nodes(broadcast_contrast, replicater)
-#g.connect_nodes(replicater, null1)
-
-#g.connect_nodes_full(replicater, multi_search, 0)
-#g.connect_nodes_full(concatenate_result, multi_search, 1)
-#g.connect_nodes(multi_search, null)
-#g.connect_nodes(multi_search, remove_circle)
-#g.connect_nodes(remove_circle, get_dup_circ)
-#g.connect_nodes(get_dup_circ, ringwriter)
-
+# Run Ufo
 sched = Ufo.Scheduler()
-#sched.set_properties(enable_tracing=True)
+sched.props.enable_tracing = True
 sched.run(g)
 
