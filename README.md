@@ -11,4 +11,4 @@ upiv code using ufo framework
 
 ## Notice
 
-* Dir filters/ contains the filters made for upiv project. Therefore the ufo framework need to know where to look for these filters. To set customized path for filters,  a special patch for ufo-core is needed.
+* Dir filters/ contains the filters made for upiv project. By sourcing the file in step 3, customized path for filters and kernels are set, and the ufo framework know where to look for these filters.
