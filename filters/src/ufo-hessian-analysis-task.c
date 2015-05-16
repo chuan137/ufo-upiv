@@ -113,7 +113,7 @@ ufo_hessian_analysis_task_get_requisition (UfoTask *task,
     priv = UFO_HESSIAN_ANALYSIS_TASK_GET_PRIVATE (task);
     priv->n_samples = (gint) req0.dims[2] / 3;
 
-    printf("hessian analysis \t%d %d %d %d\n", req0.n_dims, req0.dims[0], req0.dims[1], req0.dims[2]);
+    printf("hessian analysis \t%d %d %d %d\n", (int) req0.n_dims, (int) req0.dims[0], (int) req0.dims[1], (int) req0.dims[2]);
 
     requisition->n_dims = 3;
     requisition->dims[0] = req0.dims[0];
@@ -200,7 +200,7 @@ ufo_hessian_analysis_task_set_property (GObject *object,
                               const GValue *value,
                               GParamSpec *pspec)
 {
-    UfoHessianAnalysisTaskPrivate *priv = UFO_HESSIAN_ANALYSIS_TASK_GET_PRIVATE (object);
+    // UfoHessianAnalysisTaskPrivate *priv = UFO_HESSIAN_ANALYSIS_TASK_GET_PRIVATE (object);
 
     switch (property_id) {
         case PROP_TEST:
@@ -217,7 +217,7 @@ ufo_hessian_analysis_task_get_property (GObject *object,
                               GValue *value,
                               GParamSpec *pspec)
 {
-    UfoHessianAnalysisTaskPrivate *priv = UFO_HESSIAN_ANALYSIS_TASK_GET_PRIVATE (object);
+    // UfoHessianAnalysisTaskPrivate *priv = UFO_HESSIAN_ANALYSIS_TASK_GET_PRIVATE (object);
 
     switch (property_id) {
         case PROP_TEST:

@@ -264,16 +264,12 @@ cl_int ufo_buffer_fill_zero(cl_command_queue cmd_queue, cl_kernel *kernel, UfoBu
 {
     g_return_if_fail ( UFO_IS_BUFFER (buf) );
 
-    cl_int err;
-    cl_mem mem = ufo_buffer_get_device_array(buf, cmd_queue);
-
     UfoRequisition req;
     ufo_buffer_get_requisition(buf, &req);
 
-/*
- *    printf("fill zero \t%d %d %d\n", req.n_dims, req.dims[0], req.dims[1]);
- */
     gsize global_work_size[] = {req.dims[0], req.dims[1]};
+
+    cl_mem mem = ufo_buffer_get_device_array(buf, cmd_queue);
 
     UFO_RESOURCES_CHECK_CLERR (
             clSetKernelArg (*kernel, 0, sizeof (cl_mem), &mem));
@@ -362,21 +358,16 @@ void ufo_buffer_fftpack (cl_command_queue cmd_queue,
                                                        0, NULL, NULL));
 }
 
-void ufo_buffer_normalize(UfoBuffer *buf) {
-    
-}
-
 static gboolean
 ufo_fftconvolution_task_process (UfoTask *task,
                          UfoBuffer **inputs,
                          UfoBuffer *output,
                          UfoRequisition *requisition)
 {
-    UfoRequisition req_tmp, req_fft;
+    UfoRequisition req_tmp;
     UfoBuffer *tmp_buffer;
     gsize global_work_size[2]; 
     cl_event event;
-    cl_mem img_mem, ker_mem, fft_img_mem, fft_ker_mem, out_mem, tmp_mem;
 
     UfoFftconvolutionTaskPrivate *priv;
     priv = UFO_FFTCONVOLUTION_TASK_GET_PRIVATE (task);
@@ -413,7 +404,7 @@ ufo_fftconvolution_task_process (UfoTask *task,
                                   1, &event, NULL, priv->profiler);
 #endif
 
-    for (gint i=0; i<priv->batch_size; i++)
+    for (guint i=0; i<priv->batch_size; i++)
     {
         /*printf("\n");*/
         // copy buffer
@@ -474,7 +465,7 @@ ufo_fftconvolution_task_set_property (GObject *object,
                               const GValue *value,
                               GParamSpec *pspec)
 {
-    UfoFftconvolutionTaskPrivate *priv = UFO_FFTCONVOLUTION_TASK_GET_PRIVATE (object);
+    //UfoFftconvolutionTaskPrivate *priv = UFO_FFTCONVOLUTION_TASK_GET_PRIVATE (object);
 
     switch (property_id) {
         case PROP_TEST:
@@ -491,7 +482,7 @@ ufo_fftconvolution_task_get_property (GObject *object,
                               GValue *value,
                               GParamSpec *pspec)
 {
-    UfoFftconvolutionTaskPrivate *priv = UFO_FFTCONVOLUTION_TASK_GET_PRIVATE (object);
+    //UfoFftconvolutionTaskPrivate *priv = UFO_FFTCONVOLUTION_TASK_GET_PRIVATE (object);
 
     switch (property_id) {
         case PROP_TEST:
