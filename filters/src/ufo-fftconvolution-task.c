@@ -122,9 +122,8 @@ ufo_fftconvolution_task_get_requisition (UfoTask *task,
     priv->width_p      = req1.dims[0];
     priv->height_p     = req1.dims[1];
 
-    g_assert((priv->width == priv->width_p) &&\
-             (priv->height == priv->height_p) &&\
-             "input image must have same size as pattern\n");
+    g_assert_cmpint(priv->width, ==, priv->width_p);
+    g_assert_cmpint(priv->height, ==, priv->height_p);
 
     if (req1.n_dims == 3)
         priv->batch_size  = req1.dims[2];

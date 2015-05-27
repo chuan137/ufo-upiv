@@ -19,11 +19,8 @@ class TaskGraph(Ufo.TaskGraph):
         self.connect_nodes_full(n1, node, 0)
         self.connect_nodes_full(n2, node, 1)
 
-POSTDENOISE = False
-DENOISE = False
-
 scale            = 2
-number_of_images = 120
+number_of_images = 100
 
 ring_start     = 10 / scale
 ring_end       = 30 / scale
@@ -53,6 +50,9 @@ cutroi.props.y = yshift
 cutroi.props.width = 1024
 cutroi.props.height = 1024
 
+rescale = pm.get_task('rescale')
+rescale.props.factor = 1.0/scale
+
 denoise = pm.get_task('denoise')
 denoise.props.matrix_size = int(14/scale)
 
@@ -71,8 +71,6 @@ ring_pattern_loop = pm.get_task('buffer')
 ring_pattern_loop.props.dup_count = number_of_images 
 ring_pattern_loop.props.loop = 1 
 
-hough_convolve = pm.get_task('fftconvolution')
-
 hessian_kernel = pm.get_task('hessian_kernel')
 hessian_kernel.props.sigma = 2. / scale
 hessian_kernel.props.width = 1024 / scale
@@ -82,16 +80,12 @@ hessian_kernel_loop = pm.get_task('buffer')
 hessian_kernel_loop.props.dup_count = number_of_images
 hessian_kernel_loop.props.loop = 1 
 
+hough_convolve = pm.get_task('fftconvolution')
 hessian_convolve = pm.get_task('fftconvolution')
 hessian_analysis = pm.get_task('hessian_analysis')
 
-duplicater = pm.get_task('buffer')
-duplicater.props.dup_count = ring_count
-
-reduce_scale = pm.get_task('reduce')
-null = pm.get_task('null')
-
 broadcast_contrast = Ufo.CopyTask()
+null = pm.get_task('null')
 
 # connect ufo task graph
 g = TaskGraph()
@@ -131,9 +125,9 @@ g = TaskGraph()
 ## g.connect_nodes(hessian_analysis, write)
 
 
-if False:
-    branch1 = [read, cutroi, reduce_scale, contrast, broadcast_contrast]
-    #branch1 = [read, cutroi, reduce_scale, denoise, contrast, broadcast_contrast]
+if True:
+    #branch1 = [read, cutroi, rescale, denoise, contrast, broadcast_contrast]
+    branch1 = [read, cutroi, rescale, contrast, broadcast_contrast]
     branch2 = [gen_ring_patterns, ring_pattern_loop]
     
     g.connect_branch(branch1)
@@ -143,19 +137,34 @@ if False:
     g.connect_branch([hessian_kernel, hessian_kernel_loop])
     g.merge_branch(hough_convolve, hessian_kernel_loop, hessian_convolve)
     
+    filterparticle = pm.get_task('filter_particle')
+    filterparticle.props.min = 0.00000001
+    ringwriter = pm.get_task('ringwriter')
+    ringwriter.props.scale = scale
+    ringwriter.props.filename = 'res/rings.txt'
+    #branch4 = [hessian_convolve, hessian_analysis, filterparticle, ringwriter, null]
     branch4 = [hessian_convolve, hessian_analysis, write]
     g.connect_branch(branch4)
 else:
-    blur0 = pm.get_task('blur')
-    blur1 = pm.get_task('blur')
-    blur2 = pm.get_task('blur')
+    blur0 = pm.get_task('blur'); blur0.props.size=151
+    blur1 = pm.get_task('blur'); blur1.props.size=151
+    blur2 = pm.get_task('blur'); blur2.props.size=151
+    blur3 = pm.get_task('blur'); blur3.props.size=151
     null = pm.get_task('null')
+    null.props.finish = True
     branch = [read, blur0, blur1, blur2, write]
     g.connect_branch(branch)
 
 
 # Run Ufo
 sched = Ufo.Scheduler()
-sched.props.enable_tracing = True
-sched.run(g)
+sched.props.enable_tracing = False #True
+
+def timer_function():
+    sched.run(g)
+
+from timeit import Timer
+tm = Timer('timer_function()', 'from __main__ import timer_function')
+t = tm.timeit(1)
+print t, 'sec'
 
