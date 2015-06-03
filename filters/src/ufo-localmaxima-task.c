@@ -28,11 +28,17 @@
 #include <string.h>
 #include "ufo-localmaxima-task.h"
 
+static gfloat find_max(gfloat *, guint, guint, guint, guint);
+static gfloat snr_max(gfloat *, gint, gint, gint, gint, gint, gint);
 
 struct _UfoLocalmaximaTaskPrivate {
     guint dimx;
     guint dimy;
     guint gcount;
+    guint max_detection;
+    guint ring_start;
+    guint ring_end;
+    guint ring_step;
     cl_context context;
 };
 
@@ -46,7 +52,10 @@ G_DEFINE_TYPE_WITH_CODE (UfoLocalmaximaTask, ufo_localmaxima_task, UFO_TYPE_TASK
 
 enum {
     PROP_0,
-    PROP_TEST,
+    PROP_RING_START,
+    PROP_RING_STEP,
+    PROP_RING_END,
+    PROP_MAX_DETECTION,
     N_PROPERTIES
 };
 
@@ -86,9 +95,8 @@ ufo_localmaxima_task_get_requisition (UfoTask *task,
     priv->gcount++;
 
     /* output requistion */
-    requisition->n_dims = req_in.n_dims;
-    requisition->dims[0] = req_in.dims[0];
-    requisition->dims[1] = req_in.dims[1];
+    requisition->n_dims = 1;
+    requisition->dims[0] = 3*priv->max_detection + 1;
 }
 
 static guint
@@ -107,9 +115,254 @@ ufo_localmaxima_task_get_num_dimensions (UfoTask *task,
 static UfoTaskMode
 ufo_localmaxima_task_get_mode (UfoTask *task)
 {
-    return UFO_TASK_MODE_PROCESSOR;
+    return UFO_TASK_MODE_PROCESSOR | UFO_TASK_MODE_CPU;
 }
 
+static gboolean
+ufo_localmaxima_task_process (UfoTask *task,
+                         UfoBuffer **inputs,
+                         UfoBuffer *output,
+                         UfoRequisition *requisition)
+{
+    UfoLocalmaximaTaskPrivate *priv;  
+    UfoBuffer * tmp_buffer;
+    gfloat * img_ptr, * out_ptr, * tmp_ptr;
+    guint idx, idxx, idxy, ct1 = 0, ct2 = 0, ct3 = 0, depth;
+    gfloat glb_max, threshold;
+    UfoRequisition req_tmp;
+
+    priv = UFO_LOCALMAXIMA_TASK_GET_PRIVATE (task); 
+
+    req_tmp.n_dims = 2;
+    req_tmp.dims[0] = priv->dimx;
+    req_tmp.dims[1] = priv->dimy;
+    tmp_buffer = ufo_buffer_new(&req_tmp, priv->context);
+
+    // copy input image to host and get pointer
+    // generate output buffer on host
+    img_ptr = ufo_buffer_get_host_array(inputs[0], NULL);
+    out_ptr = ufo_buffer_get_host_array(output, NULL);
+    tmp_ptr = ufo_buffer_get_host_array(tmp_buffer, NULL);
+
+    // find global maxima
+    glb_max = 0.0f;
+    for (idx = 0; idx < priv->dimx * priv->dimy; idx++) {
+        glb_max = (img_ptr[idx] > glb_max) ? img_ptr[idx] : glb_max;
+        tmp_ptr[idx] = 0.0f;
+    }
+
+    // find local maxima and save them in temp buffer
+    threshold = 0.4f;
+    for (idxx = 1; idxx < priv->dimx - 1; idxx++)
+    for (idxy = 1; idxy < priv->dimy - 1; idxy++) {
+        idx = idxx + priv->dimx * idxy;
+        if (( img_ptr[idx] > threshold * glb_max ) &&
+            ( img_ptr[idx] > find_max(img_ptr, idxx, idxy, priv->dimx, priv->dimy) ))  {
+            tmp_ptr[idx] = 1.0f;
+            ct1++;
+        }
+    }
+
+    gint minx, maxx, miny, maxy, blobx , bloby, label = 0;
+    gfloat minv, brate;
+    char check[8];
+
+    threshold = 0.1f;
+    for (idxy = 1; idxy < priv->dimy - 1; idxy++) 
+    for (idxx = 1; idxx < priv->dimx - 1; idxx++) {
+        idx = idxx + priv->dimx * idxy;
+        if (tmp_ptr[idx] > 0.5f) {
+
+#if 0
+            label++;
+            depth = 0;
+
+            minv = img_ptr[idx];
+            minx = priv->dimx; 
+            maxx = 0;
+            miny = priv->dimy; 
+            maxy = 0;
+
+            explore(img_ptr, out_ptr, label,
+                    idxx, idxy, priv->dimx, priv->dimy, 
+                    threshold*img_ptr[idx], &depth,
+                    &minx, &maxx, &miny, &maxy, &minv); 
+
+            blobx = maxx -minx + 1;
+            bloby = maxy - miny + 1;
+            brate = (float) depth /blobx/bloby;
+
+            if (depth > 7 && depth < 51 && blobx < 7 && bloby < 7 && blobx > 1 && bloby > 1 && brate > 0.5f) {
+                    ct2++;
+                    strcpy(check, "ok");
+
+            } else {
+                tmp_ptr[idx] = 0.0f;
+                strcpy(check, "x");
+            }
+#endif
+
+
+            gfloat a1 = snr_max(img_ptr, idxx, idxy, 2, 3, priv->dimx, priv->dimy);
+
+            if (a1 > 2.0f) {
+                out_ptr[3*ct3+1] = (gfloat) idxx;
+                out_ptr[3*ct3+2] = (gfloat) idxy;
+                out_ptr[3*ct3+3] = a1;
+                strcpy(check, "ok");
+                ct3++;
+            } else {
+                tmp_ptr[idx] = 0.0f;
+                strcpy(check, "x");
+            }
+            
+            out_ptr[0] = ct3;
+
+            /*
+             *if (tmp_ptr[idx] > -0.5f) {
+             *    printf("(%4d, %4d): threshold = %5e, label = %5d", idxx, idxy, threshold*img_ptr[idx], label);
+             *    printf("\t %4d %4d %4d %.4f %2.2f %8s\n", depth, blobx, bloby, brate, a1, check);
+             *}
+             */
+
+        }
+    }
+
+    /*
+     *printf("ok %4u: number of pixels: %4u %4u %4u, \tglobal max: %8e\n", 
+     *        priv->gcount, ct1, ct2, ct3, glb_max);
+     */
+
+    return TRUE;
+}
+
+static void
+ufo_localmaxima_task_set_property (GObject *object,
+                              guint property_id,
+                              const GValue *value,
+                              GParamSpec *pspec)
+{
+    UfoLocalmaximaTaskPrivate *priv = UFO_LOCALMAXIMA_TASK_GET_PRIVATE (object);
+
+    switch (property_id) {
+        case PROP_RING_START:
+            priv->ring_start = g_value_get_uint(value);
+            break;
+        case PROP_RING_STEP:
+            priv->ring_step = g_value_get_uint(value);
+            break;
+        case PROP_RING_END:
+            priv->ring_end = g_value_get_uint(value);
+            break;
+        case PROP_MAX_DETECTION:
+            priv->max_detection = g_value_get_uint(value);
+            break;
+        default:
+            G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
+            break;
+    }
+}
+
+static void
+ufo_localmaxima_task_get_property (GObject *object,
+                              guint property_id,
+                              GValue *value,
+                              GParamSpec *pspec)
+{
+    UfoLocalmaximaTaskPrivate *priv = UFO_LOCALMAXIMA_TASK_GET_PRIVATE (object);
+
+    switch (property_id) {
+        case PROP_RING_START:
+            g_value_set_uint (value, priv->ring_start);
+            break;
+        case PROP_RING_STEP:
+            g_value_set_uint (value, priv->ring_step);
+            break;
+        case PROP_RING_END:
+            g_value_set_uint (value, priv->ring_end);
+            break;
+        case PROP_MAX_DETECTION:
+            g_value_set_uint (value, priv->max_detection);
+            break;
+        default:
+            G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
+            break;
+    }
+}
+
+static void
+ufo_localmaxima_task_finalize (GObject *object)
+{
+    G_OBJECT_CLASS (ufo_localmaxima_task_parent_class)->finalize (object);
+}
+
+static void
+ufo_task_interface_init (UfoTaskIface *iface)
+{
+    iface->setup = ufo_localmaxima_task_setup;
+    iface->get_num_inputs = ufo_localmaxima_task_get_num_inputs;
+    iface->get_num_dimensions = ufo_localmaxima_task_get_num_dimensions;
+    iface->get_mode = ufo_localmaxima_task_get_mode;
+    iface->get_requisition = ufo_localmaxima_task_get_requisition;
+    iface->process = ufo_localmaxima_task_process;
+}
+
+static void
+ufo_localmaxima_task_class_init (UfoLocalmaximaTaskClass *klass)
+{
+    GObjectClass *oclass = G_OBJECT_CLASS (klass);
+
+    oclass->set_property = ufo_localmaxima_task_set_property;
+    oclass->get_property = ufo_localmaxima_task_get_property;
+    oclass->finalize = ufo_localmaxima_task_finalize;
+
+    properties[PROP_RING_START] =
+        g_param_spec_uint ("ring_start",
+                           "give starting radius size",
+                           "give starting radius size",
+                           1, G_MAXUINT, 5,
+                           G_PARAM_READWRITE);
+
+    properties[PROP_RING_STEP] =
+        g_param_spec_uint ("ring_step",
+                           "Gives ring step",
+                           "Gives ring step",
+                           1, G_MAXUINT, 2,
+                           G_PARAM_READWRITE);
+
+    properties[PROP_RING_END] =
+        g_param_spec_uint ("ring_end",
+                           "give ending radius size",
+                           "give ending radius size",
+                           1, G_MAXUINT, 5,
+                           G_PARAM_READWRITE);
+
+    properties[PROP_MAX_DETECTION] =
+        g_param_spec_uint ("max_detection",
+                           "max detection per ring size",
+                           "max number of detected rings per ring size",
+                           1, G_MAXUINT, 100,
+                           G_PARAM_READWRITE);
+
+    for (guint i = PROP_0 + 1; i < N_PROPERTIES; i++)
+        g_object_class_install_property (oclass, i, properties[i]);
+
+    g_type_class_add_private (oclass, sizeof(UfoLocalmaximaTaskPrivate));
+}
+
+static void
+ufo_localmaxima_task_init(UfoLocalmaximaTask *self)
+{
+    self->priv = UFO_LOCALMAXIMA_TASK_GET_PRIVATE(self);
+    self->priv->ring_start = 5;
+    self->priv->ring_end = 5;
+    self->priv->ring_step = 2;
+    self->priv->max_detection = 100;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Internal helper functions
+//////////////////////////////////////////////////////////////////////////////
 static gfloat
 find_max(gfloat *ptr, guint idxx, guint idxy, guint dimx, guint dimy) {
     gfloat a, b;
@@ -233,8 +486,8 @@ static gfloat
 snr(gfloat *img_ptr, gint idx, gint idy, gint s, gint t, gint dimx, gint dimy) {
     gint pos;
     gfloat sig[100];
-    gfloat bak[200];
-    gint mask[10][10];
+    gfloat bak[400];
+    gint mask[21][21];
 
     // inner size must be smaller than outer size
     // outer size must not be larger than 10
@@ -262,25 +515,26 @@ snr(gfloat *img_ptr, gint idx, gint idy, gint s, gint t, gint dimx, gint dimy) {
         mask[i][j] = 0;
     }
 
-    for (gint i = 4-t; i < 4+t+1; i++)
-    for (gint j = 4-t; j < 4+t+1; j++) {
+    gint mid = 10;
+    for (gint i = mid-t-2; i < mid+t+3; i++)
+    for (gint j = mid-t-2; j < mid+t+3; j++) {
         mask[i][j] = 1;
     }
 
-    for (gint i = 4-s; i < 4+s+1; i++)
-    for (gint j = 4-s; j < 4+s+1; j++) {
+    for (gint i = mid-t; i < mid+t+1; i++)
+    for (gint j = mid-t; j < mid+t+1; j++) {
         mask[i][j] = 0;
     }
 
-    for (gint i = 0; i < 9; i++)                                                                         
-    for (gint j = 0; j < 9; j++) {                                                                        
-        pos = (i + idx - 4) + (j + idy - 4) * dimx;
+    for (gint i = 0; i < 21; i++)                                                                         
+    for (gint j = 0; j < 21; j++) {                                                                        
+        pos = (i + idx - mid) + (j + idy - mid) * dimx;
         mask[i][j] *= pos;
     }
 
     gint nb = 0;
-    for (gint i = 0; i < 9; i++)                                                                         
-    for (gint j = 0; j < 9; j++) {                                                                        
+    for (gint i = 0; i < 21; i++)                                                                         
+    for (gint j = 0; j < 21; j++) {                                                                        
         if ( mask[i][j] != 0 ) {
             pos = mask[i][j];
             bak[nb] = img_ptr[pos];
@@ -295,23 +549,32 @@ snr(gfloat *img_ptr, gint idx, gint idy, gint s, gint t, gint dimx, gint dimy) {
     gfloat sig_b = array_sigma(bak, mu_b, nb);
 
     // gfloat res = (mu_s - mu_b) / sqrt(nb*sig_s*sig_s + ns*sig_b*sig_b);
-    gfloat res = ns*(mu_s - mu_b) / sqrt(sig_s*sig_s + ns*sig_b*sig_b + ns*sig_b*sig_b/nb);
+    gfloat res = (mu_s - mu_b) / sqrt(ns*sig_b*sig_b + ns*sig_b*sig_b/nb);
 
-    // printf("\t%.2f\t%.4e, %.4e, %.4e, %.4e, %4d, %4d\n", res, mu_s, mu_b, sig_s, sig_b, ns, nb);
+    // printf("\t%.2f\t%.4e, %.4e, %.4e, %.4e, %4d, %4d\n", res, mu_s-mu_b, mu_b, sig_s, sig_b, ns, nb);
     return res;
 }
 
 static gfloat
 snr_max(gfloat *img_ptr, gint idx, gint idy, gint s, gint t, gint dimx, gint dimy) {
-    gfloat res, snr_array[5];
-    snr_array[0] = snr(img_ptr, idx, idy, s, t, dimx, dimy);
-    snr_array[1] = snr(img_ptr, idx - 1, idy, s, t, dimx, dimy);
-    snr_array[2] = snr(img_ptr, idx + 1, idy, s, t, dimx, dimy);
-    snr_array[3] = snr(img_ptr, idx, idy - 1, s, t, dimx, dimy);
-    snr_array[4] = snr(img_ptr, idx, idy + 1, s, t, dimx, dimy);
+    gfloat res, snr_array[10] = {0};
+
+    /*
+    snr_array[0] = snr(img_ptr, idx, idy, 2, t, dimx, dimy);
+    snr_array[1] = snr(img_ptr, idx - 1, idy, 2, t, dimx, dimy);
+    snr_array[2] = snr(img_ptr, idx + 1, idy, 2, t, dimx, dimy);
+    snr_array[3] = snr(img_ptr, idx, idy - 1, 2, t, dimx, dimy);
+    snr_array[4] = snr(img_ptr, idx, idy + 1, 2, t, dimx, dimy);
+    */
+
+    snr_array[5] = snr(img_ptr, idx, idy, 1, t, dimx, dimy);
+    snr_array[6] = snr(img_ptr, idx - 1, idy, 1, t, dimx, dimy);
+    snr_array[7] = snr(img_ptr, idx + 1, idy, 1, t, dimx, dimy);
+    snr_array[8] = snr(img_ptr, idx, idy - 1, 1, t, dimx, dimy);
+    snr_array[9] = snr(img_ptr, idx, idy + 1, 1, t, dimx, dimy);
 
     res = snr_array[0];
-    for (gint i = 1; i < 5; i++) {
+    for (gint i = 1; i < 10; i++) {
         res = (res > snr_array[i]) ? res : snr_array[i];
     }
 
@@ -355,182 +618,3 @@ explore (gfloat *src, gfloat *dst, gint label,
 }             
 
 
-static gboolean
-ufo_localmaxima_task_process (UfoTask *task,
-                         UfoBuffer **inputs,
-                         UfoBuffer *output,
-                         UfoRequisition *requisition)
-{
-    UfoLocalmaximaTaskPrivate *priv;  
-    UfoBuffer * tmp_buffer;
-    gfloat * img_ptr, * out_ptr, * tmp_ptr;
-    guint idx, idxx, idxy, ct1 = 0, ct2 = 0, ct3 = 0, depth;
-    gfloat glb_max, threshold;
-
-    priv = UFO_LOCALMAXIMA_TASK_GET_PRIVATE (task); 
-    tmp_buffer = ufo_buffer_new(requisition, priv->context);
-
-    // copy input image to host and get pointer
-    // generate output buffer on host
-    img_ptr = ufo_buffer_get_host_array(inputs[0], NULL);
-    out_ptr = ufo_buffer_get_host_array(output, NULL);
-    tmp_ptr = ufo_buffer_get_host_array(tmp_buffer, NULL);
-
-    // find global maxima
-    glb_max = 0.0f;
-    for (idx = 0; idx < priv->dimx * priv->dimy; idx++) {
-        glb_max = (img_ptr[idx] > glb_max) ? img_ptr[idx] : glb_max;
-        out_ptr[idx] = 0.0f;
-        tmp_ptr[idx] = 0.0f;
-    }
-
-    // find local maxima and save them in temp buffer
-    threshold = 0.1f;
-    for (idxx = 1; idxx < priv->dimx - 1; idxx++)
-    for (idxy = 1; idxy < priv->dimy - 1; idxy++) {
-        idx = idxx + priv->dimx * idxy;
-        if (( img_ptr[idx] > threshold * glb_max ) &&
-            ( img_ptr[idx] > find_max(img_ptr, idxx, idxy, priv->dimx, priv->dimy) ))  {
-            tmp_ptr[idx] = 1.0f;
-            ct1++;
-        }
-    }
-
-    gint minx, maxx, miny, maxy, blobx , bloby, label = 0;
-    gfloat minv, brate;
-    char check[8];
-
-    threshold = 0.1f;
-    for (idxy = 1; idxy < priv->dimy - 1; idxy++) 
-    for (idxx = 1; idxx < priv->dimx - 1; idxx++) {
-        idx = idxx + priv->dimx * idxy;
-        if (tmp_ptr[idx] > 0.5f) {
-
-            label++;
-            depth = 0;
-
-            minv = img_ptr[idx];
-            minx = priv->dimx; 
-            maxx = 0;
-            miny = priv->dimy; 
-            maxy = 0;
-
-            explore(img_ptr, out_ptr, label,
-                    idxx, idxy, priv->dimx, priv->dimy, 
-                    threshold*img_ptr[idx], &depth,
-                    &minx, &maxx, &miny, &maxy, &minv); 
-
-            blobx = maxx -minx + 1;
-            bloby = maxy - miny + 1;
-            brate = (float) depth /blobx/bloby;
-
-            if (depth > 8 && depth < 51 && blobx < 7 && bloby < 7 && blobx > 1 && bloby > 1 && brate > 0.5f) {
-                    ct2++;
-                    strcpy(check, "ok");
-
-            } else {
-                tmp_ptr[idx] = 0.0f;
-                strcpy(check, "x");
-            }
-
-            gfloat a1 = snr_max(img_ptr, idxx, idxy, 1, 4, priv->dimx, priv->dimy);
-            if (a1 > 2.0f) {
-                ct3++;
-            } else {
-                tmp_ptr[idx] = 0.0f;
-                strcpy(check, "x");
-            }
-
-            if (tmp_ptr[idx] > -0.5f) {
-                printf("(%4d, %4d): threshold = %5e, label = %5d", idxx, idxy, threshold*img_ptr[idx], label);
-                printf("\t %4d %4d %4d %.4f %2.2f %8s\n", depth, blobx, bloby, brate, a1, check);
-            }
-
-        }
-    }
-
-
-    printf("%4u: number of pixels: %4u %4u %4u, \tglobal max: %8e\n", 
-            priv->gcount, ct1, ct2, ct3, glb_max);
-
-    return TRUE;
-}
-
-static void
-ufo_localmaxima_task_set_property (GObject *object,
-                              guint property_id,
-                              const GValue *value,
-                              GParamSpec *pspec)
-{
-    // UfoLocalmaximaTaskPrivate *priv = UFO_LOCALMAXIMA_TASK_GET_PRIVATE (object);
-
-    switch (property_id) {
-        case PROP_TEST:
-            break;
-        default:
-            G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
-            break;
-    }
-}
-
-static void
-ufo_localmaxima_task_get_property (GObject *object,
-                              guint property_id,
-                              GValue *value,
-                              GParamSpec *pspec)
-{
-    // UfoLocalmaximaTaskPrivate *priv = UFO_LOCALMAXIMA_TASK_GET_PRIVATE (object);
-
-    switch (property_id) {
-        case PROP_TEST:
-            break;
-        default:
-            G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
-            break;
-    }
-}
-
-static void
-ufo_localmaxima_task_finalize (GObject *object)
-{
-    G_OBJECT_CLASS (ufo_localmaxima_task_parent_class)->finalize (object);
-}
-
-static void
-ufo_task_interface_init (UfoTaskIface *iface)
-{
-    iface->setup = ufo_localmaxima_task_setup;
-    iface->get_num_inputs = ufo_localmaxima_task_get_num_inputs;
-    iface->get_num_dimensions = ufo_localmaxima_task_get_num_dimensions;
-    iface->get_mode = ufo_localmaxima_task_get_mode;
-    iface->get_requisition = ufo_localmaxima_task_get_requisition;
-    iface->process = ufo_localmaxima_task_process;
-}
-
-static void
-ufo_localmaxima_task_class_init (UfoLocalmaximaTaskClass *klass)
-{
-    GObjectClass *oclass = G_OBJECT_CLASS (klass);
-
-    oclass->set_property = ufo_localmaxima_task_set_property;
-    oclass->get_property = ufo_localmaxima_task_get_property;
-    oclass->finalize = ufo_localmaxima_task_finalize;
-
-    properties[PROP_TEST] =
-        g_param_spec_string ("test",
-            "Test property nick",
-            "Test property description blurb",
-            "",
-            G_PARAM_READWRITE);
-
-    for (guint i = PROP_0 + 1; i < N_PROPERTIES; i++)
-        g_object_class_install_property (oclass, i, properties[i]);
-
-    g_type_class_add_private (oclass, sizeof(UfoLocalmaximaTaskPrivate));
-}
-
-static void
-ufo_localmaxima_task_init(UfoLocalmaximaTask *self)
-{
-    self->priv = UFO_LOCALMAXIMA_TASK_GET_PRIVATE(self);
-}
