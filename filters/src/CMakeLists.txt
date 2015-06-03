@@ -8,8 +8,10 @@ set(ufofilter_SRCS
     ufo-hessian-kernel-task.c
     ufo-hessian-analysis-task.c
     ufo-ordfilt-task.c
-    #ufo-ring-pattern-task.c
-    #ufo-ringwriter-task.c
+    ufo-ring-pattern-task.c
+    ufo-ring-writer-task.c
+    ufo-localmaxima-task.c
+    ufo-blob-test-task.c
     )
 
 #}}}

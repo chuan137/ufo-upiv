@@ -7,7 +7,7 @@ class TaskGraph(Ufo.TaskGraph):
             n0 = node_list[i]
             n1 = node_list[i+1]
             self.connect_nodes(n0, n1)
-    def merge_branch(self, nlist1, nlist2, node):
+    def merge_branch(self, nlist1, nlist2, nodes):
         if isinstance(nlist1, list):
             n1 = nlist1[-1]
         else:
@@ -16,23 +16,49 @@ class TaskGraph(Ufo.TaskGraph):
             n2 = nlist2[-1]
         else:
             n2 = nlist2
-        self.connect_nodes_full(n1, node, 0)
-        self.connect_nodes_full(n2, node, 1)
+        if isinstance(nodes, list):
+            self.connect_nodes_full(n1, nodes[0], 0)
+            self.connect_nodes_full(n2, nodes[0], 1)
+            self.connect_branch(nodes)
+        else:
+            self.connect_nodes_full(n1, nodes, 0)
+            self.connect_nodes_full(n2, nodes, 1)
 
 scale            = 2
-number_of_images = 100
+number_of_images = 1
+start            = 1
+out_file         = 'res/HT.tif'
+xshift           = 0
+yshift           = 0
 
-ring_start     = 10 / scale
-ring_end       = 30 / scale
+ring_start     = 8 / scale
+ring_end       = 60 / scale
 ring_step      = 2  / scale
 ring_count     = ( ring_end - ring_start )  / ring_step + 1
 ring_thickness = 6 / scale
 
-img_path = '/home/chuan/DATA/upiv/Image0.tif'; xshift = 0; yshfit = 200
-img_path = '/home/chuan/DATA/upiv/60_Luft_frame50.tif'; xshift = 150; yshift = 0
-img_path = 'input/input-stack.tif'; xshift = 150; yshift = 0
-img_path = 'input/sampleC-files/'; xshift = 150; yshift = 0
-out_file = 'res/HT.tif'
+CASE = 4
+
+if CASE == 1:
+    img_path = 'input/sampleC-0050.tif'; xshift = 150; yshfit = 0
+    img_path = 'input/sampleC-0050-contrast.tif'; xshift = 0; yshfit = 0
+    out_file = 'res/HT.tif'
+if CASE == 2:
+    img_path = 'input/sampleB-0001-cut.tif'; xshift = 0; yshift = 0
+    img_path = 'input/sampleB-0001-contrast.tif'; xshift = 0; yshift = 0
+    out_file = 'res/HT2.tif'
+if CASE == 3:
+    img_path = 'input/input-stack.tif'
+    xshift = 150; yshift = 0
+if CASE == 4:
+    img_path = '/home/chuan/DATA/upiv/sampleC-files/'
+    number_of_images = 10
+    start = 50
+    xshift = 150
+    yshift = 0
+if CASE == 5:
+    img_path = '/home/chuan/DATA/upiv/Image0.tif'; xshift = 0; yshfit = 200
+    img_path = '/home/chuan/DATA/upiv/60_Luft_frame50.tif'; xshift = 150; yshift = 0
 
 # Configure Ufo Filters
 pm = Ufo.PluginManager()
@@ -40,6 +66,7 @@ pm = Ufo.PluginManager()
 read = pm.get_task('read')
 read.props.path = img_path
 read.props.number = number_of_images
+read.props.start = start
 
 write = pm.get_task('write')
 write.props.filename = out_file
@@ -84,76 +111,51 @@ hough_convolve = pm.get_task('fftconvolution')
 hessian_convolve = pm.get_task('fftconvolution')
 hessian_analysis = pm.get_task('hessian_analysis')
 
+hessian_stack = pm.get_task('stack')
+hessian_stack.props.number = ring_count
+
+blob_test = pm.get_task('blob_test')
+blob_test.props.max_detection = 100
+blob_test.props.ring_start = ring_start
+blob_test.props.ring_step = ring_step
+blob_test.props.ring_end = ring_end
+
+ring_writer = pm.get_task('ring_writer')
+
 broadcast_contrast = Ufo.CopyTask()
+broadcast_hough_convolve = Ufo.CopyTask()
+
 null = pm.get_task('null')
+monitor = pm.get_task('monitor')
 
 # connect ufo task graph
 g = TaskGraph()
 
-## # read image and pre-processing
-## g.connect_nodes(read, cutroi)
-
-## if DENOISE:
-##     if scale == 2:
-##         g.connect_nodes(cutroi, reduce_scale)
-##         g.connect_nodes(reduce_scale, denoise)
-##         g.connect_nodes(denoise, contrast)
-##     else:
-##         g.connect_nodes(cutroi, denoise)
-##         g.connect_nodes(denoise, contrast)
-## else:
-##     if scale == 2:
-##         g.connect_nodes(cutroi, reduce_scale)
-##         g.connect_nodes(reduce_scale, contrast)
-##     else:
-##         g.connect_nodes(cutroi, contrast)
-## g.connect_nodes(contrast, broadcast_contrast)
-## # Hough transform
-## g.connect_nodes(gen_ring_patterns, ring_pattern_loop)
-## g.connect_nodes_full(broadcast_contrast, hough_convolve, 0)
-## g.connect_nodes_full(ring_pattern_loop, hough_convolve, 1)
-##
-## # Blob detection
-## if POSTDENOISE:
-##     g.connect_nodes(hough_convolve, denoise_post_HT)
-##     g.connect_nodes_full(denoise_post_HT, hessian_convolve, 0)
-## else:
-##     g.connect_nodes_full(hough_convolve, hessian_convolve, 0)
-## g.connect_nodes(hessian_kernel, hessian_kernel_loop)
-## g.connect_nodes_full(hessian_kernel_loop, hessian_convolve, 1)
-## g.connect_nodes(hessian_convolve, hessian_analysis)
-## g.connect_nodes(hessian_analysis, write)
-
-
 if True:
-    #branch1 = [read, cutroi, rescale, denoise, contrast, broadcast_contrast]
     branch1 = [read, cutroi, rescale, contrast, broadcast_contrast]
+    #branch1 = [read, cutroi, rescale, denoise, contrast, broadcast_contrast]
     branch2 = [gen_ring_patterns, ring_pattern_loop]
+    branch3 = [hessian_kernel, hessian_kernel_loop]
+    #branch4 = [hessian_convolve, hessian_analysis, hessian_stack, blob_test, ring_writer]
+    branch4 = [hessian_convolve, hessian_analysis, hessian_stack, blob_test, monitor,ring_writer]
     
     g.connect_branch(branch1)
     g.connect_branch(branch2)
-    g.merge_branch(branch1, branch2, hough_convolve)
-    
-    g.connect_branch([hessian_kernel, hessian_kernel_loop])
-    g.merge_branch(hough_convolve, hessian_kernel_loop, hessian_convolve)
-    
-    filterparticle = pm.get_task('filter_particle')
-    filterparticle.props.min = 0.00000001
-    ringwriter = pm.get_task('ringwriter')
-    ringwriter.props.scale = scale
-    ringwriter.props.filename = 'res/rings.txt'
-    #branch4 = [hessian_convolve, hessian_analysis, filterparticle, ringwriter, null]
-    branch4 = [hessian_convolve, hessian_analysis, write]
+    g.connect_branch(branch3)
     g.connect_branch(branch4)
+
+    g.merge_branch(branch1, branch2, hough_convolve)
+    g.merge_branch(hough_convolve, branch3, branch4)
 else:
-    blur0 = pm.get_task('blur'); blur0.props.size=151
-    blur1 = pm.get_task('blur'); blur1.props.size=151
-    blur2 = pm.get_task('blur'); blur2.props.size=151
-    blur3 = pm.get_task('blur'); blur3.props.size=151
-    null = pm.get_task('null')
-    null.props.finish = True
-    branch = [read, blur0, blur1, blur2, write]
-    g.connect_branch(branch)
+    branch1 = [read, cutroi, rescale, contrast, broadcast_contrast]
+    branch2 = [gen_ring_patterns, ring_pattern_loop]
+    branch3 = [hough_convolve, write]
+
+    g.connect_branch(branch1)
+    g.connect_branch(branch2)
+    g.connect_branch(branch3)
+
+    g.merge_branch(branch1, branch2, branch3)
 
 
 # Run Ufo
