@@ -35,7 +35,7 @@ print 'Output path is ', out_path
 
 img_reader.set_properties(path=img_path, step=1)
 write.set_properties(filename=out_path)
-hessian_kernel.set_properties(sigma=2, width=1024, height=1024)
+hessian_kernel.set_properties(sigma=3, width=1024, height=1024)
 hessian_kernel_loop.set_properties(loop=1)
 
 ###
