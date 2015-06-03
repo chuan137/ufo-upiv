@@ -17,6 +17,7 @@
  * License along with this library.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <stdio.h>
 #include "ufo-ring-writer-task.h"
 
 
@@ -87,18 +88,22 @@ ufo_ring_writer_task_process (UfoTask *task,
                          UfoRequisition *requisition)
 {
     char filename[256] = "rings.txt";
-    gfloat * ring_stream = ufo_buffer_get_host_array (inputs[0], NULL);
-    int nrings = (int) ring_stream[0];
+    gsize size = ufo_buffer_get_size(inputs[0]); 
+    unsigned num = size / 8 / sizeof(gfloat);
+    g_warning ("RingWriter: number of rings %lu %u", size, num);
+    
+    gfloat *in_mem = ufo_buffer_get_host_array (inputs[0], NULL);
 
     UfoRequisition req;
     ufo_buffer_get_requisition (inputs[0], &req);
 
     printf("#################################\n");
-    for (int  i = 0; i < nrings; i++) {
-        printf("%4d %8.0f %8.0f %10.2f\n", i,
-                    ring_stream[3*i+1],
-                    ring_stream[3*i+2],
-                    ring_stream[3*i+3]);
+    for (unsigned  i = 0; i < num; i++) {
+        printf("%8.0f %8.0f %8.0f %10.2f\n",
+                    in_mem[8*i+0],
+                    in_mem[8*i+1],
+                    in_mem[8*i+2],
+                    in_mem[8*i+3]);
     }
 
     return TRUE;

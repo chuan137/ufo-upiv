@@ -52,7 +52,7 @@ if CASE == 3:
     xshift = 150; yshift = 0
 if CASE == 4:
     img_path = '/home/chuan/DATA/upiv/sampleC-files/'
-    number_of_images = 10
+    number_of_images = 5
     start = 50
     xshift = 150
     yshift = 0
@@ -138,6 +138,7 @@ if True:
     branch3 = [hessian_kernel, hessian_kernel_loop]
     #branch4 = [hessian_convolve, hessian_analysis, hessian_stack, blob_test, ring_writer]
     branch4 = [hessian_convolve, hessian_analysis, hessian_stack, blob_test, monitor,ring_writer]
+    #branch4 = [hessian_convolve, hessian_analysis, hessian_stack, blob_test, monitor, null]
     
     g.connect_branch(branch1)
     g.connect_branch(branch2)

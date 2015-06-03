@@ -85,7 +85,7 @@ ufo_blob_test_task_get_requisition (UfoTask *task,
                                  UfoRequisition *requisition)
 {
     UfoBlobTestTaskPrivate *priv = UFO_BLOB_TEST_TASK_GET_PRIVATE (task);
-    UfoRequisition req_in, req_tmp; 
+    UfoRequisition req_in; 
 
     ufo_buffer_get_requisition (inputs[0], &req_in);
     priv->dimx = req_in.dims[0];
@@ -93,7 +93,7 @@ ufo_blob_test_task_get_requisition (UfoTask *task,
     priv->num_img = req_in.dims[2];
 
     requisition->n_dims = 1;
-    requisition->dims[0] = 0;
+    requisition->dims[0] = 1;
 }
 
 static guint
@@ -125,27 +125,31 @@ ufo_blob_test_task_process (UfoTask *task,
 
     float threshold_local = 0.4f;
     float threshold_alpha = 2.0f;
-    unsigned img_eles = priv->dimx * priv->dimy;
-    gsize img_size = sizeof (gfloat) * img_eles;
+    unsigned img_elements = priv->dimx * priv->dimy;
+    gsize img_size = sizeof (gfloat) * img_elements;
+    gsize record_size = 8 * sizeof (gfloat) * priv->num_img * priv->max_detection;
+    // use gfloat* record to hold detected rings
+    // each record contains 8 gfloats
+    
+    requisition->dims[0] = 0;
+    ufo_buffer_resize(output, requisition);
 
     gfloat *in_mem = ufo_buffer_get_host_array(inputs[0], NULL);
     gfloat *out_mem = ufo_buffer_get_host_array(output, NULL);
     gfloat *tmp_mem = g_malloc (img_size);
+    gfloat *rec_mem = g_malloc0 (record_size);
 
-
-    for (guint ct_img = 0; ct_img < priv->num_img; ct_img++) {
+    unsigned ct3 = 0;
+    for (guint i_img = 0; i_img < priv->num_img; i_img++) {
         // initialize temp memory
         memset(tmp_mem, 0, img_size);
-        for (gsize i = 0; i < img_eles; i++) {
-            tmp_mem[i] = 0.0f;
-        }
 
         // shift image pointer
-        gfloat *img_mem = in_mem + img_eles * ct_img;
+        gfloat *img_mem = in_mem + img_elements * i_img;
 
         // find global maxima
         float glb_max = 0.0f;
-        for (gsize i = 0; i < img_eles; i++) {
+        for (gsize i = 0; i < img_elements; i++) {
             glb_max = (img_mem[i] > glb_max) ? img_mem[i] : glb_max;
         }
 
@@ -177,19 +181,27 @@ ufo_blob_test_task_process (UfoTask *task,
 
                 if (alpha > threshold_alpha) {
                     // g_warning ("BlobTestTask: detected: %4lu %4lu %f", ix, iy, alpha);
-                    out_mem[3*ct+1] = (gfloat) ix;
-                    out_mem[3*ct+2] = (gfloat) iy;
-                    out_mem[3*ct+3] = alpha;
+                    
+                    rec_mem[8*ct3+0] = i_img;
+                    rec_mem[8*ct3+1] = ix;
+                    rec_mem[8*ct3+2] = iy;
+                    rec_mem[8*ct3+3] = alpha;
                     ct++;
+                    ct3++;
                 } else {
                     tmp_mem[i] = 0.0f;
                 }
             }
         }
-        out_mem[0] = ct;
     }
 
+    requisition->dims[0] = 8 * ct3;
+    ufo_buffer_resize(output, requisition);
+    out_mem = ufo_buffer_get_host_array (output, NULL);
+    memcpy(out_mem, rec_mem, 8 * ct3 * sizeof (gfloat));
+
     g_free (tmp_mem);
+    g_free (rec_mem);
     return TRUE;
 
 }
