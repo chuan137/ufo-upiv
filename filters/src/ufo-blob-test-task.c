@@ -32,7 +32,7 @@
 struct _UfoBlobTestTaskPrivate {
     guint dimx;
     guint dimy;
-    guint num_img;
+    guint n_radii;
     guint max_detection;
     unsigned ring_start;
     unsigned ring_end;
@@ -90,7 +90,11 @@ ufo_blob_test_task_get_requisition (UfoTask *task,
     ufo_buffer_get_requisition (inputs[0], &req_in);
     priv->dimx = req_in.dims[0];
     priv->dimy = req_in.dims[1];
-    priv->num_img = req_in.dims[2];
+    priv->n_radii = req_in.dims[2];
+
+    unsigned n_rings = (priv->ring_end - priv->ring_start) / priv->ring_step + 1;
+    if (priv->n_radii != n_rings)
+        g_warning ("BlobTestTask: [ priv->n_radii == n_rings ] fails");
 
     requisition->n_dims = 1;
     requisition->dims[0] = 1;
@@ -127,7 +131,7 @@ ufo_blob_test_task_process (UfoTask *task,
     float threshold_alpha = 2.0f;
     unsigned img_elements = priv->dimx * priv->dimy;
     gsize img_size = sizeof (gfloat) * img_elements;
-    gsize record_size = 8 * sizeof (gfloat) * priv->num_img * priv->max_detection;
+    gsize record_size = 8 * sizeof (gfloat) * priv->n_radii * priv->max_detection;
     // use gfloat* record to hold detected rings
     // each record contains 8 gfloats
     
@@ -140,12 +144,12 @@ ufo_blob_test_task_process (UfoTask *task,
     gfloat *rec_mem = g_malloc0 (record_size);
 
     unsigned ct3 = 0;
-    for (guint i_img = 0; i_img < priv->num_img; i_img++) {
+    for (guint ir = 0; ir < priv->n_radii; ir++) {
         // initialize temp memory
-        memset(tmp_mem, 0, img_size);
-
         // shift image pointer
-        gfloat *img_mem = in_mem + img_elements * i_img;
+        memset(tmp_mem, 0, img_size);
+        gfloat *img_mem = in_mem + img_elements * ir;
+        unsigned radius = priv->ring_start + ir * priv->ring_step;
 
         // find global maxima
         float glb_max = 0.0f;
@@ -173,7 +177,7 @@ ufo_blob_test_task_process (UfoTask *task,
 
             if (ct >= (int) priv->max_detection) {
                 g_warning ("BlobTestTask: Maximum detection reached");
-                break;
+                goto loopend;
             }
 
             if (tmp_mem[i] > 0.5f) {
@@ -182,7 +186,7 @@ ufo_blob_test_task_process (UfoTask *task,
                 if (alpha > threshold_alpha) {
                     // g_warning ("BlobTestTask: detected: %4lu %4lu %f", ix, iy, alpha);
                     
-                    rec_mem[8*ct3+0] = i_img;
+                    rec_mem[8*ct3+0] = radius;
                     rec_mem[8*ct3+1] = ix;
                     rec_mem[8*ct3+2] = iy;
                     rec_mem[8*ct3+3] = alpha;
@@ -193,6 +197,8 @@ ufo_blob_test_task_process (UfoTask *task,
                 }
             }
         }
+        loopend:
+            continue;
     }
 
     requisition->dims[0] = 8 * ct3;
