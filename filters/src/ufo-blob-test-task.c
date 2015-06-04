@@ -56,6 +56,8 @@ G_DEFINE_TYPE_WITH_CODE (UfoBlobTestTask, ufo_blob_test_task, UFO_TYPE_TASK_NODE
 enum {
     PROP_0,
     PROP_MAX_DETECTION,
+    PROP_ALPHA_THRESHOLD,
+    PROP_LOCAL_THRESHOLD,
     PROP_RING_START,
     PROP_RING_STEP,
     PROP_RING_END,
@@ -90,11 +92,16 @@ ufo_blob_test_task_get_requisition (UfoTask *task,
     ufo_buffer_get_requisition (inputs[0], &req_in);
     priv->dimx = req_in.dims[0];
     priv->dimy = req_in.dims[1];
-    priv->n_radii = req_in.dims[2];
+
+    if ( req_in.n_dims == 3 )
+        priv->n_radii = req_in.dims[2];
+    else
+        priv->n_radii = 1;
 
     unsigned n_rings = (priv->ring_end - priv->ring_start) / priv->ring_step + 1;
     if (priv->n_radii != n_rings)
-        g_warning ("BlobTestTask: [ priv->n_radii == n_rings ] fails");
+        g_warning ("BlobTestTask: priv->n_radii == n_rings fails [ %u != %u ]",
+                    priv->n_radii, n_rings);
 
     requisition->n_dims = 1;
     requisition->dims[0] = 1;
@@ -127,8 +134,8 @@ ufo_blob_test_task_process (UfoTask *task,
 {
     UfoBlobTestTaskPrivate *priv = UFO_BLOB_TEST_TASK_GET_PRIVATE (task);
 
-    float threshold_local = 0.4f;
-    float threshold_alpha = 2.0f;
+    float threshold_local = priv->threshold_local;
+    float threshold_alpha = priv->threshold_alpha;
     unsigned img_elements = priv->dimx * priv->dimy;
     gsize img_size = sizeof (gfloat) * img_elements;
     gsize record_size = 8 * sizeof (gfloat) * priv->n_radii * priv->max_detection;
@@ -224,6 +231,12 @@ ufo_blob_test_task_set_property (GObject *object,
         case PROP_MAX_DETECTION:
             priv->max_detection = g_value_get_uint(value);
             break;
+        case PROP_LOCAL_THRESHOLD:
+            priv->threshold_local = g_value_get_uint(value);
+            break;
+        case PROP_ALPHA_THRESHOLD:
+            priv->threshold_alpha = g_value_get_uint(value);
+            break;
         case PROP_RING_START:
             priv->ring_start = g_value_get_uint(value);
             break;
@@ -250,6 +263,12 @@ ufo_blob_test_task_get_property (GObject *object,
     switch (property_id) {
         case PROP_MAX_DETECTION:
             g_value_set_uint (value, priv->max_detection);
+            break;
+        case PROP_LOCAL_THRESHOLD:
+            g_value_set_uint (value, priv->threshold_local);
+            break;
+        case PROP_ALPHA_THRESHOLD:
+            g_value_set_uint (value, priv->threshold_alpha);
             break;
         case PROP_RING_START:
             g_value_set_uint (value, priv->ring_start);
@@ -298,7 +317,22 @@ ufo_blob_test_task_class_init (UfoBlobTestTaskClass *klass)
                            "max number of detected rings per ring size",
                            1, G_MAXUINT, 100,
                            G_PARAM_READWRITE);
-    properties[PROP_RING_START] =
+
+    properties[PROP_LOCAL_THRESHOLD] = 
+        g_param_spec_float ("local",
+                            "local threshold",
+                            "local threshold of pixel brightness",
+                            0.0, 1.0, 0.1,
+                            G_PARAM_READWRITE);
+
+    properties[PROP_ALPHA_THRESHOLD] = 
+        g_param_spec_float ("alpha",
+                            "alpha threshold",
+                            "alpha threshold of signal to noise ratio",
+                            1.0, 10.0, 2.0,
+                            G_PARAM_READWRITE);
+
+   properties[PROP_RING_START] =
         g_param_spec_uint ("ring_start",
                            "give starting radius size",
                            "give starting radius size",
@@ -333,6 +367,8 @@ ufo_blob_test_task_init(UfoBlobTestTask *self)
     self->priv->ring_start = 5;
     self->priv->ring_end = 5;
     self->priv->ring_step = 2;
+    self->priv->threshold_local = 0.1f;
+    self->priv->threshold_alpha = 2.0f;
 }
 
 //////////////////////////////////////////////////////////////////////////////
