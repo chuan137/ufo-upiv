@@ -10,7 +10,7 @@ set(ufofilter_SRCS
     ufo-ordfilt-task.c
     ufo-ring-pattern-task.c
     ufo-ring-writer-task.c
-    ufo-localmaxima-task.c
+    ufo-local-maxima-task.c
     ufo-blob-test-task.c
     )
 
