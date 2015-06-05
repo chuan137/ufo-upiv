@@ -26,26 +26,26 @@ class TaskGraph(Ufo.TaskGraph):
 
 scale            = 2
 number_of_images = 1
-start            = 1
+start            = 0
 out_file         = 'res/HT.tif'
 xshift           = 0
 yshift           = 0
 
-ring_start     = 8 / scale
-ring_end       = 60 / scale
+ring_start     = 6 / scale
+ring_end       = 30 / scale
 ring_step      = 2  / scale
-ring_count     = ( ring_end - ring_start )  / ring_step + 1
 ring_thickness = 6 / scale
 
-CASE = 4
+CASE = 2
 
 if CASE == 1:
     img_path = 'input/sampleC-0050.tif'; xshift = 150; yshfit = 0
     img_path = 'input/sampleC-0050-contrast.tif'; xshift = 0; yshfit = 0
-    out_file = 'res/HT.tif'
+    ring_start = 16 / scale
+    ring_end = 26 / scale
 if CASE == 2:
-    img_path = 'input/sampleB-0001-cut.tif'; xshift = 0; yshift = 0
-    img_path = 'input/sampleB-0001-contrast.tif'; xshift = 0; yshift = 0
+    img_path = 'input/sampleB-0001-cut.tif'
+    img_path = 'input/sampleB-0001-contrast.tif'
     out_file = 'res/HT2.tif'
 if CASE == 3:
     img_path = 'input/input-stack.tif'
@@ -59,6 +59,8 @@ if CASE == 4:
 if CASE == 5:
     img_path = '/home/chuan/DATA/upiv/Image0.tif'; xshift = 0; yshfit = 200
     img_path = '/home/chuan/DATA/upiv/60_Luft_frame50.tif'; xshift = 150; yshift = 0
+
+ring_count     = ( ring_end - ring_start )  / ring_step + 1
 
 # Configure Ufo Filters
 pm = Ufo.PluginManager()
@@ -86,6 +88,7 @@ denoise.props.matrix_size = int(14/scale)
 contrast = pm.get_task('contrast')
 contrast.props.remove_high = 0
 
+print ring_start, ring_end, ring_step
 gen_ring_patterns = pm.get_task('ring_pattern')
 gen_ring_patterns.props.ring_start = ring_start
 gen_ring_patterns.props.ring_end   = ring_end
@@ -133,12 +136,13 @@ g = TaskGraph()
 
 if True:
     branch1 = [read, cutroi, rescale, contrast, broadcast_contrast]
-    #branch1 = [read, cutroi, rescale, denoise, contrast, broadcast_contrast]
     branch2 = [gen_ring_patterns, ring_pattern_loop]
     branch3 = [hessian_kernel, hessian_kernel_loop]
-    #branch4 = [hessian_convolve, hessian_analysis, hessian_stack, blob_test, ring_writer]
-    branch4 = [hessian_convolve, hessian_analysis, hessian_stack, blob_test, monitor,ring_writer]
+    branch4 = [hessian_convolve, hessian_analysis, monitor, write]
+    #branch1 = [read, cutroi, rescale, denoise, contrast, broadcast_contrast]
     #branch4 = [hessian_convolve, hessian_analysis, hessian_stack, blob_test, monitor, null]
+    #branch4 = [hessian_convolve, hessian_analysis, hessian_stack, blob_test, ring_writer]
+    #branch4 = [hessian_convolve, hessian_analysis, hessian_stack, blob_test, monitor,ring_writer]
     
     g.connect_branch(branch1)
     g.connect_branch(branch2)
