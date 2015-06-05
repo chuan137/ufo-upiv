@@ -9,12 +9,11 @@ hessian_det (__global float *out,
     const int slice = get_global_size(0) * get_global_size(1);
     const int pitch = width * idy + idx;
 
-    float hxx = in[pitch];
-    float hyy = in[slice + pitch];
-    float hxy = in[slice*2 +  pitch];
+    float hxx = 1000 * in[pitch];
+    float hyy = 1000 * in[slice + pitch];
+    float hxy = 1000 * in[slice*2 +  pitch];
 
-    out[idy * width + idx] = (10000*hxx*hyy - 10000*hxy*hxy)/10000.0;
-    //out[idy * width + idx] = hxx;
+    out[idy * width + idx] = hxx*hyy - hxy*hxy;
 }
 
 

@@ -67,8 +67,8 @@ ufo_local_maxima_task_get_requisition (UfoTask *task,
     ufo_buffer_get_requisition(inputs[0], &req_in);
 
     *requisition = req_in;
-    requisition->n_dims = 3;
-    requisition->dims[2] = 2;
+    // requisition->n_dims = 3;
+    // requisition->dims[2] = 2;
     // input is 2d image
     // output is input image + label image of identical size
 }
@@ -110,7 +110,7 @@ ufo_local_maxima_task_process (UfoTask *task,
 
     gfloat * out_mem = ufo_buffer_get_host_array(output, NULL);
     memset (out_mem, 0, img_size);
-    memcpy (out_mem + img_size_p, in_mem, img_size);
+    // memcpy (out_mem + img_size_p, in_mem, img_size);
     // input image is attached to output
 
     gfloat mean = array_mean(in_mem, img_size_p);
@@ -120,7 +120,7 @@ ufo_local_maxima_task_process (UfoTask *task,
     unsigned ct = 0;
     for (unsigned i = 0; i < img_size_p; i++) {
         if (in_mem[i] > mean + sigma * std) {
-            out_mem[i] = mean + 2 * sigma * std;
+            out_mem[i] = 1.0f;
             ct++;
         }
     }

@@ -27,7 +27,6 @@
 #include <math.h>
 #include <string.h>
 #include "ufo-blob-test-task.h"
-#include "ufo-ring-coordinates.h"
 
 struct _UfoBlobTestTaskPrivate {
     guint dimx;
