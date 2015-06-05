@@ -12,6 +12,8 @@ set(ufofilter_SRCS
     ufo-ring-writer-task.c
     ufo-local-maxima-task.c
     ufo-blob-test-task.c
+    ufo-label-cluster-task.c
+    ufo-combine-test-task.c
     )
 
 #}}}
