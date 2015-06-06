@@ -1,35 +1,13 @@
 #!/usr/bin/env python
 from gi.repository import Ufo
+from ufo_extension import TaskGraph, PluginManager
 
-class TaskGraph(Ufo.TaskGraph):
-    def connect_branch(self, node_list):
-        for i in range(len(node_list)-1):
-            n0 = node_list[i]
-            n1 = node_list[i+1]
-            self.connect_nodes(n0, n1)
-    def merge_branch(self, nlist1, nlist2, nodes):
-        if isinstance(nlist1, list):
-            n1 = nlist1[-1]
-        else:
-            n1 = nlist1
-        if isinstance(nlist2, list):
-            n2 = nlist2[-1]
-        else:
-            n2 = nlist2
-        if isinstance(nodes, list):
-            self.connect_nodes_full(n1, nodes[0], 0)
-            self.connect_nodes_full(n2, nodes[0], 1)
-            self.connect_branch(nodes)
-        else:
-            self.connect_nodes_full(n1, nodes, 0)
-            self.connect_nodes_full(n2, nodes, 1)
-
-scale            = 2
-number_of_images = 1
-start            = 0
-out_file         = 'res/HT.tif'
-xshift           = 0
-yshift           = 0
+scale          = 2
+num_images     = 1
+start          = 0
+out_file       = 'res/HT.tif'
+xshift         = 0
+yshift         = 0
 
 ring_start     = 6 / scale
 ring_end       = 30 / scale
@@ -52,7 +30,7 @@ if CASE == 3:
     xshift = 150; yshift = 0
 if CASE == 4:
     img_path = '/home/chuan/DATA/upiv/sampleC-files/'
-    number_of_images = 5
+    num_images = 5
     start = 50
     xshift = 150
     yshift = 0
@@ -63,73 +41,40 @@ if CASE == 5:
 ring_count     = ( ring_end - ring_start )  / ring_step + 1
 
 # Configure Ufo Filters
-pm = Ufo.PluginManager()
+pm      = PluginManager()
 
-read = pm.get_task('read')
-read.props.path = img_path
-read.props.number = number_of_images
-read.props.start = start
+read    = pm.get_task('read', path=img_path, number=num_images, start=start)
+write   = pm.get_task('write', filename=out_file)
+null    = pm.get_task('null')
+monitor = pm.get_task('monitor')
 
-write = pm.get_task('write')
-write.props.filename = out_file
+cutroi  = pm.get_task('cut-roi', x=xshift, y=yshift, width=1024, height=1024)
+rescale = pm.get_task('rescale', factor=1./scale)
+denoise = pm.get_task('denoise', matrix_size=int(14/scale))
+contrast = pm.get_task('contrast', remove_high=0)
 
-cutroi = pm.get_task('cut-roi')
-cutroi.props.x = xshift
-cutroi.props.y = yshift
-cutroi.props.width = 1024
-cutroi.props.height = 1024
+gen_ring_patterns   = pm.get_task('ring_pattern', 
+                        ring_start=ring_start, ring_end=ring_start, 
+                        ring_step=ring_step, ring_thickness=ring_thickness,
+                        width=1024/scale, height=1024/scale)
+ring_pattern_loop   = pm.get_task('buffer', dup_count=num_images, loop=True)
 
-rescale = pm.get_task('rescale')
-rescale.props.factor = 1.0/scale
+hessian_kernel      = pm.get_task('hessian_kernel', sigma=2./scale, width=1024/scale, height=1024/scale)
+hessian_kernel_loop = pm.get_task('buffer', dup_count=num_images, loop=True)
 
-denoise = pm.get_task('denoise')
-denoise.props.matrix_size = int(14/scale)
+hough_convolve      = pm.get_task('fftconvolution')
+hessian_convolve    = pm.get_task('fftconvolution')
+hessian_analysis    = pm.get_task('hessian_analysis')
+hessian_stack       = pm.get_task('stack', number=ring_count)
 
-contrast = pm.get_task('contrast')
-contrast.props.remove_high = 0
-
-print ring_start, ring_end, ring_step
-gen_ring_patterns = pm.get_task('ring_pattern')
-gen_ring_patterns.props.ring_start = ring_start
-gen_ring_patterns.props.ring_end   = ring_end
-gen_ring_patterns.props.ring_step  = ring_step
-gen_ring_patterns.props.ring_thickness = ring_thickness
-gen_ring_patterns.props.width  = 1024 / scale
-gen_ring_patterns.props.height = 1024 / scale
-
-ring_pattern_loop = pm.get_task('buffer')
-ring_pattern_loop.props.dup_count = number_of_images 
-ring_pattern_loop.props.loop = 1 
-
-hessian_kernel = pm.get_task('hessian_kernel')
-hessian_kernel.props.sigma = 2. / scale
-hessian_kernel.props.width = 1024 / scale
-hessian_kernel.props.height = 1024 / scale
-
-hessian_kernel_loop = pm.get_task('buffer')
-hessian_kernel_loop.props.dup_count = number_of_images
-hessian_kernel_loop.props.loop = 1 
-
-hough_convolve = pm.get_task('fftconvolution')
-hessian_convolve = pm.get_task('fftconvolution')
-hessian_analysis = pm.get_task('hessian_analysis')
-
-hessian_stack = pm.get_task('stack')
-hessian_stack.props.number = ring_count
-
-blob_test = pm.get_task('blob_test')
-blob_test.props.max_detection = 100
-blob_test.props.ring_start = ring_start
-blob_test.props.ring_step = ring_step
-blob_test.props.ring_end = ring_end
+blob_test = pm.get_task('blob_test', max_detection=100, 
+                        ring_start=ring_start, ring_step=ring_step, 
+                        ring_end=ring_end)
 
 ring_writer = pm.get_task('ring_writer')
 
 broadcast_contrast = Ufo.CopyTask()
 broadcast_hough_convolve = Ufo.CopyTask()
-
-null = pm.get_task('null')
-monitor = pm.get_task('monitor')
 
 # connect ufo task graph
 g = TaskGraph()
