@@ -1,4 +1,5 @@
 \documentclass{article}
+\usepackage{graphicx}
 \usepackage{tikz}
 \usetikzlibrary{calc,trees,positioning,arrows,chains,shapes.geometric,%
     decorations.pathreplacing,decorations.pathmorphing,shapes,%
@@ -48,7 +49,7 @@ framework also supports to stream images on to multiple GPUs on same or
 different hosts.  It is our future work to speed up the software with a GPU
 cluster. At the moment, we have use UFO to develop our software with GPU
 acceleration.  Benchmarking on our particle tracking software shows that it
-takes roughly 400ms to process each frame on a computer with a Nvidia GTX Titan
+takes roughly 300 to process each frame on a computer with a Nvidia GTX Titan
 GPU card and Xeon E3-1200 CPU.  
 
 \input{uptv.tex}
@@ -60,11 +61,19 @@ GPU card and Xeon E3-1200 CPU.
 \textbf{Algorithm} & \textbf{Benchmark} \\
 \hline
 Order Statistic Filter & 200~s \\
-Hough Transform & 400~ms \\
+Hough Transform & 300~ms \\
 \hline
 \end{tabular}
 \caption{Benchmark: Hough transform compared to order statistic filter algorithm.}
 \end{table}
+
+\begin{figure} 
+    \centering 
+    \includegraphics[width=0.8\textwidth]{fig_bc}
+\caption{Performance measured with various number of frames. Fitting of the
+data shows that the processing of image stream takes roughly 300 ms per frame
+without initial setup time.} 
+\end{figure}
 
 
 \end{document}
