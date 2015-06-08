@@ -10,31 +10,46 @@ Since the defocused images of seed particles are fuzzy rings, the task of
 tracking the micron-scale particles is to identify the rings of various sizes
 on each frame and reconstruct their trajectories. For this project, We have
 developed a fast algorithm based on Hough Transform for particle tracking.
-With the help of UFO framework, we implement our new algorithm easily on
-graphic cards. Compared to old software using order statistic filter algorithm,
-the performance of our new algorithm is boosted by a factor 500.
+With the help of UFO parallel computing framework, we implement our new algorithm on
+heterogeneous computing platforms with graphic cards. 
 
-The flow of our algorithm is shown in Fig. \ref{fig:alguptv}.  Standard image
-processing filters, like local contrast enhancement and noise reduction, are
-first applied to the input images, then they are sent to Hough Transform
-filter. In our problem, standard procedure of edge detection before HT does not
-apply, since the rings are fuzzy and do not have crisp edges. To overcome this
-problem, we have devised an efficient blob detection algorithm, because the HT
-votes at the ring center tend to have the shape of blurred blob.  Our method is
-very effective in finding the ring candidates. In order to eliminate the false
-positives in the candidates, we further use a azimuthal filter, which is a test
+
+The old Matlab software uses template matching method based on order statistic
+filter algorithm. However template matching is not efficient in dealing with
+patterns of large sizes. Indeed it shows poor performance in searching for
+rings with radius that is about 20 and larger pixels. In addition, when the
+algorithm is implemented on parallel computing devices like GPUs, it can not
+support patterns with arbitrary large radius, since the patterns can be too
+large to be hold in device caches. Therefore we investigate on a new algorithm
+based on Hough Transform (HT). We find that Hough Transform for circular
+patterns can be efficiently carried out with Fast Fourier Transform. Our
+approach is therefore both computing time and memory efficient.
+
+The flow of our algorithm is shown in Fig. \ref{fig:alguptv}.  We first apply
+standard image processing filters, such as local contrast enhancement and noise
+reduction, to the input images. Then they are sent to HT filter. In our
+problem, the standard procedure of edge detection before HT does not apply,
+since the rings are fuzzy and do not have crisp edges. Our approach is to apply
+HT filters without edge detection and devise an efficient blob detection
+algorithm, because the HT votes tend to form blurred blobs at position of ring
+centers.  In this step, most unwanted pixels are filtered out, leaving the rest
+pixels as candidates for ring centers.  We further use a azimuthal filter to
+eliminate the false positives in the candidates. The azimuthal filter is a test
 on the pixel histogram in radius direction respect to the center of candidate
-ring. Another benifit from using the azimuthal filter is,  that the position of
-the the ring center can be determined to pixel level by fitting histogram around
-the peak position against a gaussian function.
-
+ring. The histogram calculated from true ring center shall show strong peak at
+the position of ring radii. To identify the peaks, we have to apply a fitting
+procedure with a Gaussian fitting function. The benefit is that the precisions
+of ring centers and ring radius can be determined to pixel level. However,
+the task is not suitable to be paralleled on GPUs.
 
 The UFO framework let us develop software in OpenCL with relative ease and
-distribute the more computational intensive part on to graphic cards. We have
-developed GPU kernel programs for all filters apart from the azimuthal test,
-which is more suitable for execution on CPU cores. Benchmarking on our particle
-tracking software shows that it takes roughly 400ms to process each frame on a
-computer with Nvidia GTX Titan GPU cards and Xeon E3-1200 CPU.  
+distribute the more computational intensive part on to graphic cards. The UFO
+framework also supports to stream images on to multiple GPUs on same or
+different hosts.  It is our future work to speed up the software with a GPU
+cluster. At the moment, we have use UFO to develop our software with GPU
+acceleration.  Benchmarking on our particle tracking software shows that it
+takes roughly 400ms to process each frame on a computer with a Nvidia GTX Titan
+GPU card and Xeon E3-1200 CPU.  
 
 \input{uptv.tex}
 
