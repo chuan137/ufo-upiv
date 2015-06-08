@@ -12,6 +12,9 @@ test.py
 tools/
 tmp
 
+*.aux
+*.log
+
 
 filters/src/ufo-ring-coordinates.h
 filters/src/ufo-ringwriter-task.c

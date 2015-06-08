@@ -1,0 +1,63 @@
+
+\tikzset{
+>=stealth',
+  punktchain/.style={
+    rectangle, 
+    rounded corners, 
+    % fill=black!10,
+    draw=black, very thick,
+    text width=10em, 
+    minimum height=3em, 
+    inner sep=0.7em,
+    text centered, 
+    on chain},
+  line/.style={draw, thick, <-},
+  element/.style={
+    tape,
+    top color=white,
+    bottom color=blue!50!black!60!,
+    minimum width=8em,
+    draw=blue!40!black!90, very thick,
+    text width=10em, 
+    minimum height=3.5em, 
+    text centered, 
+    on chain},
+  every join/.style={->, thick,shorten >=1pt},
+  decoration={brace},
+  tuborg/.style={decorate},
+  tubnode/.style={midway, right=2pt},
+}
+
+\begin{figure}
+\centering
+\begin{tikzpicture}
+    [thick,scale=1.0,
+      node distance=1.8em,
+      every node/.style={scale=1.0},
+      start chain=going below,]
+     \node[punktchain, join] (intro) {Input image stream};
+     \node[punktchain, join] (preprocessing) {
+             Pre-processing:\\
+             \emph{\footnotesize contrast adjustment,\\[-0.6em]
+                                             denoising} };
+     \node[punktchain, join] (hough)      {Hough Transform};
+     \node[punktchain, join] (blob) {Hessian blob detection};
+     \node[punktchain, join] (azimuth) {Post processing:\\
+                                        \emph {\footnotesize Azimuthal filter} };
+     \node[punktchain, join] (output) {Output stream};
+
+          %Now, let us add some braches. 
+  %% No. 1
+  %\draw[tuborg] let
+    %\p1=(risiko.west), \p2=(finans.east) in
+    %($(\x1,\y1+2.5em)$) -- ($(\x2,\y2+2.5em)$) node[above, midway]  {Teori};
+  %% No. 2
+  %\draw[tuborg, decoration={brace}] let \p1=(disk.north), \p2=(makro.south) in
+    %($(2, \y1)$) -- ($(2, \y2)$) node[tubnode] {Analyse};
+  %% No. 3
+  %\draw[tuborg, decoration={brace}] let \p1=(perfekt.north), \p2=(emperi.south) in
+    %($(2, \y1)$) -- ($(2, \y2)$) node[tubnode] {Problemfelt};
+\end{tikzpicture}
+\caption{uptv algorithm}
+\label{fig:alguptv}
+\end{figure}
