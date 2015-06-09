@@ -143,9 +143,11 @@ ufo_label_cluster_task_process (UfoTask *task,
                     out_mem[cpos] = -1.0f;
                 }
             } else {
-                printf("%4d (%3d): [%3d:%3d, %3d:%3d], %4d, %6f\n", 
-                        label, depth, minx, maxx, miny, maxy,
-                        csize, (float) depth / csize );
+                /*
+                 *printf("LabelCluster: %4d (%3d), [%3d:%3d, %3d:%3d], %4d, %6f\n", 
+                 *        label, depth, minx, maxx, miny, maxy,
+                 *        csize, (float) depth / csize );
+                 */
             }
         }
     }

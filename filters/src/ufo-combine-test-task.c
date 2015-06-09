@@ -17,6 +17,7 @@
  * License along with this library.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <stdlib.h>
 #include <string.h>
 #include "ufo-combine-test-task.h"
 
@@ -59,9 +60,7 @@ ufo_combine_test_task_get_requisition (UfoTask *task,
                                  UfoBuffer **inputs,
                                  UfoRequisition *requisition)
 {
-    UfoRequisition req_in;
-    ufo_buffer_get_requisition (inputs[0], &req_in);
-    *requisition = req_in;
+    ufo_buffer_get_requisition (inputs[0], requisition);
 }
 
 static guint
@@ -113,28 +112,36 @@ ufo_combine_test_task_process (UfoTask *task,
 {
     gfloat *in_mem = ufo_buffer_get_host_array (inputs[0], NULL);
     gfloat *out_mem = ufo_buffer_get_host_array (output, NULL);
+
     unsigned mem_size_p = requisition->dims[0] * requisition->dims[1];
     gsize mem_size = mem_size_p * sizeof (gfloat);
 
     gfloat *tmp1_mem = g_malloc0(mem_size);
     gfloat *tmp2_mem = g_malloc0(mem_size);
-    // gfloat *tmp3_mem = g_malloc0(mem_size);
-    // gfloat *tmp4_mem = g_malloc0(mem_size);
+    gfloat *tmp3_mem = g_malloc0(mem_size);
 
-    and_op(tmp1_mem, in_mem, in_mem + mem_size, mem_size_p);
+    and_op(tmp1_mem, in_mem, in_mem + mem_size_p, mem_size_p);
+    memcpy (out_mem, tmp1_mem, mem_size);
 
-    for (unsigned i = 1; i < requisition->dims[2]-1; i++) {
+    unsigned i;
+    for (i = 1; i < requisition->dims[2]-1; i++) {
         /*memcpy(tmp3_mem, in_mem + i * mem_size, mem_size);*/
         /*memcpy(tmp4_mem, in_mem + (i+1) * mem_size, mem_size);*/
         /*and_op(tmp2_mem, tmp3_mem, tmp4_mem, mem_size_p);*/
+        //or_op(out_mem + i*mem_size_p, tmp1_mem, tmp2_mem, mem_size_p);
         and_op(tmp2_mem, in_mem + i*mem_size_p, in_mem + (i+1)*mem_size_p, mem_size_p);
+        or_op (tmp3_mem, tmp1_mem, tmp2_mem, mem_size_p);
 
-        or_op(out_mem + i*mem_size_p, tmp1_mem, tmp2_mem, mem_size_p);
+        memcpy (out_mem + i * mem_size_p, tmp3_mem, mem_size);
 
         memcpy(tmp1_mem, tmp2_mem, mem_size);
         memset(tmp2_mem, 0, mem_size);
     }
+    memcpy (out_mem + i * mem_size_p, tmp1_mem, mem_size);
 
+    free (tmp1_mem);
+    free (tmp2_mem);
+    free (tmp3_mem);
     return TRUE;
 }
 
