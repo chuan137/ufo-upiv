@@ -1,47 +1,59 @@
 #!/usr/bin/env python
 from gi.repository import Ufo
-
-class TaskGraph(Ufo.TaskGraph):
-    def connect_branch(self, node_list):
-        for i in range(len(node_list)-1):
-            n0 = node_list[i]
-            n1 = node_list[i+1]
-            print i, n0
-            self.connect_nodes(n0, n1)
-    def merge_branch(self, nlist1, nlist2, nodes):
-        if isinstance(nlist1, list):
-            n1 = nlist1[-1]
-        else:
-            n1 = nlist1
-        if isinstance(nlist2, list):
-            n2 = nlist2[-1]
-        else:
-            n2 = nlist2
-        if isinstance(nodes, list):
-            self.connect_nodes_full(n1, nodes[0], 0)
-            self.connect_nodes_full(n2, nodes[0], 1)
-            self.connect_branch(nodes)
-        else:
-            self.connect_nodes_full(n1, nodes, 0)
-            self.connect_nodes_full(n2, nodes, 1)
-
-class PluginManager(Ufo.PluginManager):
-    def get_task(self, task, **kwargs):
-        t = super(PluginManager, self).get_task(task)
-        t.set_properties(**kwargs)
-        return t
+from ufo_extension import TaskGraph, PluginManager
 
 pm = PluginManager()
-read = pm.get_task('read', path='res/HT2.tif')
+
 local_maxima = pm.get_task('local-maxima', sigma=3)
 label_cluster = pm.get_task('label-cluster')
-stack = pm.get_task('stack', number=13)
-monitor = pm.get_task('monitor')
 combine_test = pm.get_task('combine-test')
-write = pm.get_task('write', filename='res/res.tif')
+blob_test = pm.get_task('blob_test')
+null = pm.get_task('null')
 
+bc_read = Ufo.CopyTask()
+stack = pm.get_task('stack', number=13)
+stack2 = pm.get_task('stack', number=13)
+unstack = pm.get_task('unstack')
+unstack2 = pm.get_task('unstack')
+monitor = pm.get_task('monitor')
+monitor1 = pm.get_task('monitor')
+
+graph = 0
 g = TaskGraph()
-g.connect_branch([read, local_maxima, label_cluster, stack, monitor, combine_test, write])
+
+if graph == 0:
+    read = pm.get_task('read', path='res/HT2.tif')
+    write = pm.get_task('write', filename='res/res.tif')
+
+    if True:
+        branch1 = [read, monitor, bc_read, stack2, unstack2]
+        #branch2 = [bc_read, local_maxima, label_cluster, stack, combine_test, unstack, monitor]
+        #branch2 = [bc_read, stack, combine_test, unstack]
+        branch2 = [bc_read, stack, unstack]
+        branch3 = [blob_test, write]
+        g.merge_branch(branch2, branch1, branch3)
+    else:
+        branch2 = [read, bc_read, local_maxima, label_cluster,
+                   stack, combine_test, unstack, write]
+        g.connect_branch(branch2)
+
+if graph == 1:
+    read = pm.get_task('read', path='res/HT2.tif')
+    write = pm.get_task('write', filename='res/cluster2.tif')
+    branch1 = [read, local_maxima, label_cluster, write]
+    g.connect_branch(branch1)
+
+if graph == 2:
+    read = pm.get_task('read', path='res/HT2.tif')
+    write = pm.get_task('write', filename='res/combine2.tif')
+    branch1 = [read, local_maxima, label_cluster, stack, combine_test, unstack, write]
+    g.connect_branch(branch1)
+
+if graph == 3:
+    read = pm.get_task('read', path='res/HT2.tif')
+    read1 = pm.get_task('read', path='res/combine2.tif')
+    write = pm.get_task('write', filename='res/blob2.tif')
+    g.merge_branch([read, stack, unstack], [read1, stack2, unstack2], [blob_test, write])
 
 # Run Ufo
 sched = Ufo.Scheduler()
