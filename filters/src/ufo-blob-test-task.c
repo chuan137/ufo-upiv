@@ -29,7 +29,6 @@ struct _UfoBlobTestTaskPrivate {
 };
 
 static void ufo_task_interface_init (UfoTaskIface *iface);
-
 static gfloat snr(gfloat *img_ptr, gint idx, gint idy, gint s, gint t, gint dimx, gint dimy);
 
 G_DEFINE_TYPE_WITH_CODE (UfoBlobTestTask, ufo_blob_test_task, UFO_TYPE_TASK_NODE,
@@ -125,7 +124,6 @@ ufo_blob_test_task_process (UfoTask *task,
         }
     }
     g_warning ("BlobTestTask: %d out of %d pixels detected as ring cneter", ct2, ct);
-
     return TRUE;
 }
 
@@ -299,4 +297,3 @@ snr(gfloat *img_ptr, gint idx, gint idy, gint s, gint t, gint dimx, gint dimy) {
     // printf("\t%.2f\t%.4e, %.4e, %.4e, %.4e, %4d, %4d\n", res, mu_s-mu_b, mu_b, sig_s, sig_b, ns, nb);
     return res;
 }
-
