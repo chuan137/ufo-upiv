@@ -17,34 +17,15 @@
  * License along with this library.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifdef __APPLE__                                                                
-#include <OpenCL/cl.h>                                                          
-#else                                                                           
-#include <CL/cl.h>                                                              
-#endif    
-
-#include <stdio.h>
-#include <math.h>
 #include <string.h>
 #include "ufo-blob-test-task.h"
 
+
 struct _UfoBlobTestTaskPrivate {
-    guint dimx;
-    guint dimy;
-    guint n_radii;
-    guint max_detection;
-    unsigned ring_start;
-    unsigned ring_end;
-    unsigned ring_step;
-    UfoBuffer *tmp_buffer;
-    float threshold_local;
-    float threshold_alpha;
-    cl_context context;
+    gboolean foo;
 };
 
 static void ufo_task_interface_init (UfoTaskIface *iface);
-static gfloat find_max(gfloat *, guint, guint, guint, guint);
-static gfloat snr_max(gfloat *, gint, gint, gint, gint, gint, gint);
 
 G_DEFINE_TYPE_WITH_CODE (UfoBlobTestTask, ufo_blob_test_task, UFO_TYPE_TASK_NODE,
                          G_IMPLEMENT_INTERFACE (UFO_TYPE_TASK,
@@ -54,12 +35,7 @@ G_DEFINE_TYPE_WITH_CODE (UfoBlobTestTask, ufo_blob_test_task, UFO_TYPE_TASK_NODE
 
 enum {
     PROP_0,
-    PROP_MAX_DETECTION,
-    PROP_ALPHA_THRESHOLD,
-    PROP_LOCAL_THRESHOLD,
-    PROP_RING_START,
-    PROP_RING_STEP,
-    PROP_RING_END,
+    PROP_TEST,
     N_PROPERTIES
 };
 
@@ -76,8 +52,6 @@ ufo_blob_test_task_setup (UfoTask *task,
                        UfoResources *resources,
                        GError **error)
 {
-    UfoBlobTestTaskPrivate *priv = UFO_BLOB_TEST_TASK_GET_PRIVATE (task);
-    priv->context = ufo_resources_get_context (resources);
 }
 
 static void
@@ -85,44 +59,26 @@ ufo_blob_test_task_get_requisition (UfoTask *task,
                                  UfoBuffer **inputs,
                                  UfoRequisition *requisition)
 {
-    UfoBlobTestTaskPrivate *priv = UFO_BLOB_TEST_TASK_GET_PRIVATE (task);
-    UfoRequisition req_in; 
-
-    ufo_buffer_get_requisition (inputs[0], &req_in);
-    priv->dimx = req_in.dims[0];
-    priv->dimy = req_in.dims[1];
-
-    if ( req_in.n_dims == 3 )
-        priv->n_radii = req_in.dims[2];
-    else
-        priv->n_radii = 1;
-
-    unsigned n_rings = (priv->ring_end - priv->ring_start) / priv->ring_step + 1;
-    if (priv->n_radii != n_rings)
-        g_warning ("BlobTestTask: priv->n_radii == n_rings fails [ %u != %u ]",
-                    priv->n_radii, n_rings);
-
-    requisition->n_dims = 1;
-    requisition->dims[0] = 1;
+    ufo_buffer_get_requisition (inputs[0], requisition);
 }
 
 static guint
 ufo_blob_test_task_get_num_inputs (UfoTask *task)
 {
-    return 1;
+    return 2;
 }
 
 static guint
 ufo_blob_test_task_get_num_dimensions (UfoTask *task,
                                              guint input)
 {
-    return 3;
+    return 2;
 }
 
 static UfoTaskMode
 ufo_blob_test_task_get_mode (UfoTask *task)
 {
-    return UFO_TASK_MODE_PROCESSOR | UFO_TASK_MODE_CPU;
+    return UFO_TASK_MODE_PROCESSOR;
 }
 
 static gboolean
@@ -131,91 +87,16 @@ ufo_blob_test_task_process (UfoTask *task,
                          UfoBuffer *output,
                          UfoRequisition *requisition)
 {
-    UfoBlobTestTaskPrivate *priv = UFO_BLOB_TEST_TASK_GET_PRIVATE (task);
+    unsigned size_p = requisition->dims[0] * requisition->dims[1];
+    size_t size = size_p * sizeof (gfloat);
 
-    float threshold_local = priv->threshold_local;
-    float threshold_alpha = priv->threshold_alpha;
-    unsigned img_elements = priv->dimx * priv->dimy;
-    gsize img_size = sizeof (gfloat) * img_elements;
-    gsize record_size = 8 * sizeof (gfloat) * priv->n_radii * priv->max_detection;
-    // use gfloat* record to hold detected rings
-    // each record contains 8 gfloats
-    
-    requisition->dims[0] = 0;
-    ufo_buffer_resize(output, requisition);
+    gfloat * in_mem = ufo_buffer_get_host_array (inputs[0], NULL);
+    gfloat * test_mem = ufo_buffer_get_host_array (inputs[1], NULL);
+    gfloat * out_mem = ufo_buffer_get_host_array (output, NULL);
 
-    gfloat *in_mem = ufo_buffer_get_host_array(inputs[0], NULL);
-    gfloat *out_mem = ufo_buffer_get_host_array(output, NULL);
-    gfloat *tmp_mem = g_malloc (img_size);
-    gfloat *rec_mem = g_malloc0 (record_size);
+    memcpy (out_mem, in_mem, size);
 
-    unsigned ct3 = 0;
-    for (guint ir = 0; ir < priv->n_radii; ir++) {
-        // initialize temp memory
-        // shift image pointer
-        memset(tmp_mem, 0, img_size);
-        gfloat *img_mem = in_mem + img_elements * ir;
-        unsigned radius = priv->ring_start + ir * priv->ring_step;
-
-        // find global maxima
-        float glb_max = 0.0f;
-        for (gsize i = 0; i < img_elements; i++) {
-            glb_max = (img_mem[i] > glb_max) ? img_mem[i] : glb_max;
-        }
-
-        // find local maxima and save them in temp buffer
-        int ct = 0;
-        for (gsize ix = 1; ix < priv->dimx - 1; ix++)
-        for (gsize iy = 1; iy < priv->dimy - 1; iy++) {
-            gsize i = ix + priv->dimx * iy;
-            if (( img_mem[i] > threshold_local * glb_max ) &&
-                ( img_mem[i] > find_max(img_mem, ix, iy, priv->dimx, priv->dimy) ))  {
-                tmp_mem[i] = 1.0f;
-                ct++;
-            }
-        }
-
-        // blob test
-        ct = 0;
-        for (gsize ix = 1; ix < priv->dimx - 1; ix++)
-        for (gsize iy = 1; iy < priv->dimy - 1; iy++) {
-            gsize i = ix + priv->dimx * iy;
-
-            if (ct >= (int) priv->max_detection) {
-                g_warning ("BlobTestTask: Maximum detection reached");
-                goto loopend;
-            }
-
-            if (tmp_mem[i] > 0.5f) {
-                float alpha = snr_max(img_mem, ix, iy, 2, 3, priv->dimx, priv->dimy);
-
-                if (alpha > threshold_alpha) {
-                    // g_warning ("BlobTestTask: detected: %4lu %4lu %f", ix, iy, alpha);
-                    
-                    rec_mem[8*ct3+0] = radius;
-                    rec_mem[8*ct3+1] = ix;
-                    rec_mem[8*ct3+2] = iy;
-                    rec_mem[8*ct3+3] = alpha;
-                    ct++;
-                    ct3++;
-                } else {
-                    tmp_mem[i] = 0.0f;
-                }
-            }
-        }
-        loopend:
-            continue;
-    }
-
-    requisition->dims[0] = 8 * ct3;
-    ufo_buffer_resize(output, requisition);
-    out_mem = ufo_buffer_get_host_array (output, NULL);
-    memcpy(out_mem, rec_mem, 8 * ct3 * sizeof (gfloat));
-
-    g_free (tmp_mem);
-    g_free (rec_mem);
     return TRUE;
-
 }
 
 static void
@@ -224,26 +105,10 @@ ufo_blob_test_task_set_property (GObject *object,
                               const GValue *value,
                               GParamSpec *pspec)
 {
-    UfoBlobTestTaskPrivate *priv = UFO_BLOB_TEST_TASK_GET_PRIVATE (object);
+    // UfoBlobTestTaskPrivate *priv = UFO_BLOB_TEST_TASK_GET_PRIVATE (object);
 
     switch (property_id) {
-        case PROP_MAX_DETECTION:
-            priv->max_detection = g_value_get_uint(value);
-            break;
-        case PROP_LOCAL_THRESHOLD:
-            priv->threshold_local = g_value_get_uint(value);
-            break;
-        case PROP_ALPHA_THRESHOLD:
-            priv->threshold_alpha = g_value_get_uint(value);
-            break;
-        case PROP_RING_START:
-            priv->ring_start = g_value_get_uint(value);
-            break;
-        case PROP_RING_STEP:
-            priv->ring_step = g_value_get_uint(value);
-            break;
-        case PROP_RING_END:
-            priv->ring_end = g_value_get_uint(value);
+        case PROP_TEST:
             break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -257,26 +122,10 @@ ufo_blob_test_task_get_property (GObject *object,
                               GValue *value,
                               GParamSpec *pspec)
 {
-    UfoBlobTestTaskPrivate *priv = UFO_BLOB_TEST_TASK_GET_PRIVATE (object);
+    // UfoBlobTestTaskPrivate *priv = UFO_BLOB_TEST_TASK_GET_PRIVATE (object);
 
     switch (property_id) {
-        case PROP_MAX_DETECTION:
-            g_value_set_uint (value, priv->max_detection);
-            break;
-        case PROP_LOCAL_THRESHOLD:
-            g_value_set_uint (value, priv->threshold_local);
-            break;
-        case PROP_ALPHA_THRESHOLD:
-            g_value_set_uint (value, priv->threshold_alpha);
-            break;
-        case PROP_RING_START:
-            g_value_set_uint (value, priv->ring_start);
-            break;
-        case PROP_RING_STEP:
-            g_value_set_uint (value, priv->ring_step);
-            break;
-        case PROP_RING_END:
-            g_value_set_uint (value, priv->ring_end);
+        case PROP_TEST:
             break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -310,47 +159,12 @@ ufo_blob_test_task_class_init (UfoBlobTestTaskClass *klass)
     oclass->get_property = ufo_blob_test_task_get_property;
     oclass->finalize = ufo_blob_test_task_finalize;
 
-    properties[PROP_MAX_DETECTION] =
-        g_param_spec_uint ("max_detection",
-                           "max detection per ring size",
-                           "max number of detected rings per ring size",
-                           1, G_MAXUINT, 100,
-                           G_PARAM_READWRITE);
-
-    properties[PROP_LOCAL_THRESHOLD] = 
-        g_param_spec_float ("local",
-                            "local threshold",
-                            "local threshold of pixel brightness",
-                            0.0, 1.0, 0.1,
-                            G_PARAM_READWRITE);
-
-    properties[PROP_ALPHA_THRESHOLD] = 
-        g_param_spec_float ("alpha",
-                            "alpha threshold",
-                            "alpha threshold of signal to noise ratio",
-                            1.0, 10.0, 2.0,
-                            G_PARAM_READWRITE);
-
-   properties[PROP_RING_START] =
-        g_param_spec_uint ("ring_start",
-                           "give starting radius size",
-                           "give starting radius size",
-                           1, G_MAXUINT, 5,
-                           G_PARAM_READWRITE);
-
-    properties[PROP_RING_STEP] =
-        g_param_spec_uint ("ring_step",
-                           "Gives ring step",
-                           "Gives ring step",
-                           1, G_MAXUINT, 2,
-                           G_PARAM_READWRITE);
-
-    properties[PROP_RING_END] =
-        g_param_spec_uint ("ring_end",
-                           "give ending radius size",
-                           "give ending radius size",
-                           1, G_MAXUINT, 5,
-                           G_PARAM_READWRITE);
+    properties[PROP_TEST] =
+        g_param_spec_string ("test",
+            "Test property nick",
+            "Test property description blurb",
+            "",
+            G_PARAM_READWRITE);
 
     for (guint i = PROP_0 + 1; i < N_PROPERTIES; i++)
         g_object_class_install_property (oclass, i, properties[i]);
@@ -362,161 +176,4 @@ static void
 ufo_blob_test_task_init(UfoBlobTestTask *self)
 {
     self->priv = UFO_BLOB_TEST_TASK_GET_PRIVATE(self);
-    self->priv->max_detection = 100;
-    self->priv->ring_start = 5;
-    self->priv->ring_end = 5;
-    self->priv->ring_step = 2;
-    self->priv->threshold_local = 0.1f;
-    self->priv->threshold_alpha = 2.0f;
 }
-
-//////////////////////////////////////////////////////////////////////////////
-// internal helper functions
-//////////////////////////////////////////////////////////////////////////////
-static gfloat array_mean(gfloat *arr, gint n) {
-    gfloat res = 0.0f;
-    for (gint i = 0; i < n; i++) res += arr[i];
-    return res/n;
-}
-
-static gfloat array_sigma(gfloat *arr, gfloat mean, gint n) {
-    gfloat res = 0.0f;
-    for (gint i = 0; i < n; i++) res += ( arr[i] - mean ) * ( arr[i] - mean );
-    return sqrt(res/(n-1));
-}
-
-/*
- *  @s: inner size
- *  @t: outer size
- */
-
-static gfloat
-snr(gfloat *img_ptr, gint idx, gint idy, gint s, gint t, gint dimx, gint dimy) {
-    gint pos;
-    gfloat sig[100];
-    gfloat bak[400];
-    gint mask[21][21];
-
-    // inner size must be smaller than outer size
-    // outer size must not be larger than 10
-    if (s > t) return -1.0f;
-    if (t > 5) return -1.0f;
-
-    // when pixel is close to boundary, discard it
-    if (idx - t - 2 < 0) return -1.0f;
-    if (idy - t - 2 < 0) return -1.0f;
-    if (idx + t + 2>= dimx) return -1.0f;
-    if (idy + t + 2>= dimy) return -1.0f;
-
-    // get signal pixels from inner region 
-    gint ns = 0;
-    for (gint ix = idx - s; ix < idx + s + 1; ix++)
-    for (gint iy = idy - s; iy < idy + s + 1; iy++) {
-        pos = ix + dimx * iy;
-        sig[ns] = img_ptr[pos];
-        ns++;
-    }
-
-    // get background pixels from outer region
-    for (gint i = 0; i < 21; i++)
-    for (gint j = 0; j < 21; j++) {
-        mask[i][j] = 0;
-    }
-
-    gint mid = 10;
-    for (gint i = mid-t-2; i < mid+t+3; i++)
-    for (gint j = mid-t-2; j < mid+t+3; j++) {
-        mask[i][j] = 1;
-    }
-
-    for (gint i = mid-t; i < mid+t+1; i++)
-    for (gint j = mid-t; j < mid+t+1; j++) {
-        mask[i][j] = 0;
-    }
-
-    for (gint i = 0; i < 21; i++)                                                                         
-    for (gint j = 0; j < 21; j++) {                                                                        
-        pos = (i + idx - mid) + (j + idy - mid) * dimx;
-        mask[i][j] *= pos;
-    }
-
-    gint nb = 0;
-    for (gint i = 0; i < 21; i++)                                                                         
-    for (gint j = 0; j < 21; j++) {                                                                        
-        if ( mask[i][j] != 0 ) {
-            pos = mask[i][j];
-            bak[nb] = img_ptr[pos];
-            nb++;
-        }
-    }
-
-    gfloat mu_s = array_mean(sig, ns);
-    gfloat mu_b = array_mean(bak, nb);
-
-    // gfloat sig_s = array_sigma(sig, mu_s, ns);
-    gfloat sig_b = array_sigma(bak, mu_b, nb);
-
-    // gfloat res = (mu_s - mu_b) / sqrt(nb*sig_s*sig_s + ns*sig_b*sig_b);
-    gfloat res = (mu_s - mu_b) / sqrt(ns*sig_b*sig_b + ns*sig_b*sig_b/nb);
-
-    // printf("\t%.2f\t%.4e, %.4e, %.4e, %.4e, %4d, %4d\n", res, mu_s-mu_b, mu_b, sig_s, sig_b, ns, nb);
-    return res;
-}
-
-static gfloat
-snr_max(gfloat *img_ptr, gint idx, gint idy, gint s, gint t, gint dimx, gint dimy) {
-    gfloat res, snr_array[10] = {0};
-
-    /*
-    snr_array[0] = snr(img_ptr, idx, idy, 2, t, dimx, dimy);
-    snr_array[1] = snr(img_ptr, idx - 1, idy, 2, t, dimx, dimy);
-    snr_array[2] = snr(img_ptr, idx + 1, idy, 2, t, dimx, dimy);
-    snr_array[3] = snr(img_ptr, idx, idy - 1, 2, t, dimx, dimy);
-    snr_array[4] = snr(img_ptr, idx, idy + 1, 2, t, dimx, dimy);
-    */
-
-    snr_array[5] = snr(img_ptr, idx, idy, 1, t, dimx, dimy);
-    snr_array[6] = snr(img_ptr, idx - 1, idy, 1, t, dimx, dimy);
-    snr_array[7] = snr(img_ptr, idx + 1, idy, 1, t, dimx, dimy);
-    snr_array[8] = snr(img_ptr, idx, idy - 1, 1, t, dimx, dimy);
-    snr_array[9] = snr(img_ptr, idx, idy + 1, 1, t, dimx, dimy);
-
-    res = snr_array[0];
-    for (gint i = 1; i < 10; i++) {
-        res = (res > snr_array[i]) ? res : snr_array[i];
-    }
-
-    return res;
-}
-
-static gfloat
-find_max(gfloat *ptr, guint idxx, guint idxy, guint dimx, guint dimy) {
-    gfloat a, b;
-
-    b = ptr[idxx-1  + dimx * (idxy-1)];
-
-    b = MAX(ptr[idxx + dimx * (idxy-1)], b);
-    // b = (b > a) ? b : a;
-
-    a = ptr[idxx+1 + dimx * (idxy-1)];
-    b = (b > a) ? b : a;
-
-    a = ptr[idxx-1 + dimx * idxy];
-    b = (b > a) ? b : a;
-
-    a = ptr[idxx+1 + dimx * idxy];
-    b = (b > a) ? b : a;
-
-    a = ptr[idxx-1  + dimx * (idxy+1)];
-    b = (b > a) ? b : a;
-
-    a = ptr[idxx + dimx * (idxy+1)];
-    b = (b > a) ? b : a;
-
-    a = ptr[idxx+1 + dimx * (idxy+1)];
-    b = (b > a) ? b : a;
-
-    return b;
-}
-
-
