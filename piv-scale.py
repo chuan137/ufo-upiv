@@ -2,34 +2,42 @@
 from gi.repository import Ufo
 from ufo_extension import TaskGraph, PluginManager
 
-scale          = 2
 num_images     = 1
-start          = 0
-out_file       = 'res/HT.tif'
-xshift         = 0
-yshift         = 0
+file_start     = 0
+xshift, yshift = 0, 0
 
-ring_start     = 6 / scale
-ring_end       = 30 / scale
-ring_step      = 2  / scale
-ring_thickness = 6 / scale
+ring_start     = 10 
+ring_end       = 30 
+ring_step      = 2 
+ring_thickness = 6 
 
-CASE = 2
+scale          = 2
+
+blob_alpha     = 1.0
+
+CASE = 3
 
 if CASE == 1:
-    img_path = 'input/sampleC-0050.tif'; xshift = 150; yshfit = 0
     img_path = 'input/sampleC-0050-contrast.tif'; xshift = 0; yshfit = 0
-    ring_start = 16 / scale
-    ring_end = 26 / scale
+    img_path = 'input/sampleC-0050.tif'; xshift = 150; yshfit = 0
+    ring_start = 10 
+    ring_end = 30 
+    blob_alpha = 1.0
 if CASE == 2:
-    img_path = 'input/sampleB-0001-cut.tif'
     img_path = 'input/sampleB-0001-contrast.tif'
-    out_file = 'res/HT2.tif'
+    ring_start = 10 
+    ring_end = 60
+    blob_alpha = 0.8
 if CASE == 3:
     img_path = 'input/input-stack.tif'
+    num_images = 4 
     xshift = 150; yshift = 0
+    ring_start = 10 
+    ring_end = 30 
+    blob_alpha = 1.0
 if CASE == 4:
     img_path = '/home/chuan/DATA/upiv/sampleC-files/'
+    img_path = 'input/sampleC-files/'
     num_images = 5
     start = 50
     xshift = 150
@@ -38,78 +46,87 @@ if CASE == 5:
     img_path = '/home/chuan/DATA/upiv/Image0.tif'; xshift = 0; yshfit = 200
     img_path = '/home/chuan/DATA/upiv/60_Luft_frame50.tif'; xshift = 150; yshift = 0
 
-ring_count     = ( ring_end - ring_start )  / ring_step + 1
+ring_start = ring_start / scale
+ring_step = ring_step / scale
+ring_end = ring_end / scale
+ring_thickness = ring_thickness / scale
+ring_count = ( ring_end - ring_start )  / ring_step + 1
+out_file = 'res/res%d.tif' % CASE
 
 # Configure Ufo Filters
 pm      = PluginManager()
 
-read    = pm.get_task('read', path=img_path, number=num_images, start=start)
+read    = pm.get_task('read', path=img_path, number=num_images, start=file_start)
 write   = pm.get_task('write', filename=out_file)
 null    = pm.get_task('null')
 monitor = pm.get_task('monitor')
 
-cutroi  = pm.get_task('cut-roi', x=xshift, y=yshift, width=1024, height=1024)
+crop    = pm.get_task('crop', x=xshift, y=yshift, width=1024, height=1024)
 rescale = pm.get_task('rescale', factor=1./scale)
 denoise = pm.get_task('denoise', matrix_size=int(14/scale))
 contrast = pm.get_task('contrast', remove_high=0)
 
 gen_ring_patterns   = pm.get_task('ring_pattern', 
-                        ring_start=ring_start, ring_end=ring_start, 
+                        ring_start=ring_start, ring_end=ring_end, 
                         ring_step=ring_step, ring_thickness=ring_thickness,
                         width=1024/scale, height=1024/scale)
-ring_pattern_loop   = pm.get_task('buffer', dup_count=num_images, loop=True)
+ring_pattern_loop   = pm.get_task('buffer', dup_count=num_images, loop=1)
 
-hessian_kernel      = pm.get_task('hessian_kernel', sigma=2./scale, width=1024/scale, height=1024/scale)
-hessian_kernel_loop = pm.get_task('buffer', dup_count=num_images, loop=True)
+hessian_kernel      = pm.get_task('hessian_kernel', sigma=2./scale, 
+                                  width=1024/scale, height=1024/scale)
+hessian_kernel_loop = pm.get_task('buffer', dup_count=num_images, loop=1)
 
 hough_convolve      = pm.get_task('fftconvolution')
 hessian_convolve    = pm.get_task('fftconvolution')
 hessian_analysis    = pm.get_task('hessian_analysis')
 hessian_stack       = pm.get_task('stack', number=ring_count)
 
-blob_test = pm.get_task('blob_test', max_detection=100, 
-                        ring_start=ring_start, ring_step=ring_step, 
-                        ring_end=ring_end)
+local_maxima = pm.get_task('local-maxima', sigma=3)
+label_cluster = pm.get_task('label-cluster')
+combine_test = pm.get_task('combine-test')
+blob_test = pm.get_task('blob_test', alpha=blob_alpha)
+null = pm.get_task('null')
+stack1 = pm.get_task('stack', number=ring_count)
+stack2 = pm.get_task('stack', number=ring_count)
+unstack1 = pm.get_task('unstack')
+unstack2 = pm.get_task('unstack')
+monitor = pm.get_task('monitor')
+monitor1 = pm.get_task('monitor')
 
 ring_writer = pm.get_task('ring_writer')
 
-broadcast_contrast = Ufo.CopyTask()
-broadcast_hough_convolve = Ufo.CopyTask()
+bc_contrast = Ufo.CopyTask()
+bc_hessian = Ufo.CopyTask()
 
 # connect ufo task graph
 g = TaskGraph()
+graph = 2
 
-if True:
-    branch1 = [read, cutroi, rescale, contrast, broadcast_contrast]
+if graph == 1:
+    write.props.filename = 'res/HT%d.tif' % CASE
+    branch1 = [read, crop, rescale, contrast, bc_contrast]
     branch2 = [gen_ring_patterns, ring_pattern_loop]
     branch3 = [hessian_kernel, hessian_kernel_loop]
-    branch4 = [hessian_convolve, hessian_analysis, monitor, write]
-    #branch1 = [read, cutroi, rescale, denoise, contrast, broadcast_contrast]
-    #branch4 = [hessian_convolve, hessian_analysis, hessian_stack, blob_test, monitor, null]
-    #branch4 = [hessian_convolve, hessian_analysis, hessian_stack, blob_test, ring_writer]
-    #branch4 = [hessian_convolve, hessian_analysis, hessian_stack, blob_test, monitor,ring_writer]
+    branch4 = [hessian_convolve, hessian_analysis, write]
     
-    g.connect_branch(branch1)
-    g.connect_branch(branch2)
-    g.connect_branch(branch3)
-    g.connect_branch(branch4)
+    g.merge_branch(branch1, branch2, hough_convolve)
+    g.merge_branch(hough_convolve, branch3, branch4)
+
+if graph == 2:
+    branch1 = [read, crop, rescale, contrast, bc_contrast]
+    branch2 = [gen_ring_patterns, ring_pattern_loop]
+    branch3 = [hessian_kernel, hessian_kernel_loop]
+    #branch4 = [hessian_convolve, hessian_analysis, monitor, stack1, monitor1, null]
+    branch4 = [hessian_convolve, hessian_analysis, bc_hessian, stack1, unstack1]
+    branch5 = [bc_hessian, local_maxima, label_cluster, stack2, combine_test, unstack2]
+    branch6 = [blob_test, write]
 
     g.merge_branch(branch1, branch2, hough_convolve)
     g.merge_branch(hough_convolve, branch3, branch4)
-else:
-    branch1 = [read, cutroi, rescale, contrast, broadcast_contrast]
-    branch2 = [gen_ring_patterns, ring_pattern_loop]
-    branch3 = [hough_convolve, write]
-
-    g.connect_branch(branch1)
-    g.connect_branch(branch2)
-    g.connect_branch(branch3)
-
-    g.merge_branch(branch1, branch2, branch3)
-
+    g.merge_branch(branch4, branch5, branch6)
 
 # Run Ufo
-sched = Ufo.Scheduler()
+sched = Ufo.FixedScheduler()
 sched.props.enable_tracing = False #True
 
 def timer_function():

@@ -10,7 +10,7 @@ res
 tests/**/
 test.py
 tools/
-tmp
+tmp*
 
 
 filters/src/ufo-ring-coordinates.h
