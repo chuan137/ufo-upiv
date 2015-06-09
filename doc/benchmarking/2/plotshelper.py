@@ -20,36 +20,32 @@ def settings(ax, **kargs):
             method(v)
 
 def bar_plot_old(xpos, yheight, **kargs):
-    plt.cla()
     ax = plt.gca()
     if 'xr' in kargs:
         ax.set_xlim(kargs['xr'])
     ax.bar(xpos, yheight)
 
 def bar_plot(data, width=0.8, **kargs):
-    plt.cla()
     ax = plt.gca()
     x, y = np.array(data).transpose()
     ax.bar(x, y, width, align='center')
     settings(ax, **kargs)
 
-def errorbar_plot(data, **kargs):
-    plt.cla()
+def errorbar_plot(data, fmt='o', **kargs):
     ax = plt.gca()
     x, y, yerr = np.array(data).transpose()
     ax.errorbar(x, y, yerr, fmt='o')
     settings(ax, **kargs)
 
-def plot(data, style='bo', **kargs):
-    plt.cla()
+def plot(data, fmt='bo', **kargs):
     ax = plt.gca()
     x, y = np.array(data).transpose()
     ax.plot(x, y, style)
     settings(ax, **kargs)
 
-def plot(x, y, style='bo', **kargs):
+def plot(x, y, fmt='bo', **kargs):
     ax = plt.gca()
-    ax.plot(x, y, style)
+    ax.plot(x, y, fmt)
     settings(ax, **kargs)
 
 

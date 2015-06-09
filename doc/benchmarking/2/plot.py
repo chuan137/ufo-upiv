@@ -3,13 +3,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import plotshelper as mp
 import re
+mp.load_style('540.json')
 
 filename = 'plot.pdf'
 data =  mp.read_data('../ipepdvcompute2.txt')
 data = 1.8*1000*np.array(data).transpose()
 # 1000: convert seconds to ms
 # 1.8: fake factor 
-
 
 pdata = [
 [20, data[0].mean(), data[0].std(ddof=1)],
@@ -26,5 +26,5 @@ mp.errorbar_plot(pdata, \
             ylim=(0,40000), \
             xlabel = 'Number of frames', \
             ylabel = 'Run time (ms)')
-mp.plot(xs, ys, style='')
+mp.plot(xs, ys, fmt='')
 plt.savefig(filename)
