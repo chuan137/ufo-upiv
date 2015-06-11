@@ -124,7 +124,7 @@ ufo_local_maxima_task_process (UfoTask *task,
             ct++;
         }
     }
-    printf ("LocalMaxima: number of filtered pixels = %u\n", ct);
+    // printf ("LocalMaxima: number of filtered pixels = %u\n", ct);
     
     return TRUE;
 }

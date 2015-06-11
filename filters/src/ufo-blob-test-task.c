@@ -123,7 +123,7 @@ ufo_blob_test_task_process (UfoTask *task,
             } 
         }
     }
-    g_warning ("BlobTestTask: %d out of %d pixels detected as ring cneter", ct2, ct);
+    // g_warning ("BlobTestTask: %d out of %d pixels detected as ring cneter", ct2, ct);
     return TRUE;
 }
 

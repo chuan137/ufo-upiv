@@ -17,6 +17,7 @@
  * License along with this library.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <math.h>
 #include "ufo-log-task.h"
 
 
