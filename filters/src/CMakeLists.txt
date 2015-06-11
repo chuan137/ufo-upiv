@@ -14,6 +14,9 @@ set(ufofilter_SRCS
     ufo-blob-test-task.c
     ufo-label-cluster-task.c
     ufo-combine-test-task.c
+    ufo-sum-task.c
+    ufo-log-task.c
+    ufo-brightness-cut-task.c
     )
 
 #}}}
