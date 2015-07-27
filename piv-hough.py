@@ -16,6 +16,5 @@ piv = PivJob(parms) # initialze piv job
 piv.setup_graph() # setup piv graph
 piv.setup_schedule()
 
-t = piv.run_t() # Run piv
+t = piv.run_t() # Run piv with timer
 print t, 'sec'
-
