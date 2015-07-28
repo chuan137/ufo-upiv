@@ -11,6 +11,7 @@ tests/**/
 test.py
 tools/
 tmp*
+_tmp*
 
 
 filters/src/ufo-ring-coordinates.h

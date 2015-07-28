@@ -107,7 +107,7 @@ class PivJob():
 
 
     def setup_graph(self):
-        branch1 = ['read', 'crop', 'rescale', 'contrast', 'brightness', 'monitor']
+        branch1 = ['read', 'crop', 'rescale', 'contrast', 'brightness']
         branch2 = ['gen_ring_patterns', 'ring_pattern_loop']
         branch3 = ['hessian_kernel', 'hessian_kernel_loop']
         branch4 = ['hessian_convolve', 'hessian_analysis', 'bc_hessian', 'stack1', 'unstack1']
