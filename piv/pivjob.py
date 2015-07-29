@@ -1,9 +1,9 @@
 from gi.repository import Ufo
 from .ufo_extension import PluginManager, TaskGraph
+from .ufojob import UfoJob
 from .ddict import DotDict
-from timeit import Timer
 
-class PivJob():
+class PivJob(UfoJob):
     _default_parms = dict(
         device = 'GPU',     # GPU/CPU
         profiling = False,  # True/False
@@ -23,133 +23,74 @@ class PivJob():
         )
 
     def __init__(self, parms={}):
-        self.pm = PluginManager()
-        self.graph = TaskGraph()
-        self.sched= Ufo.Scheduler()
-        self.tasks = DotDict()
-        self.parms = DotDict(parms)
-        # setup tasks and graph
-        self.set_default_parms()
+        super(PivJob, self).__init__(parms)
         self.setup_tasks()
-
-
-    def set_default_parms(self):
-        for k, v in self._default_parms.iteritems():
-            if not self.parms.get(k):
-                self.parms[k] = v
-
-
-    def setup_tasks(self):
-        parms = self.parms
-        pm = self.pm
-
-        scale = parms.scale
-        ring_count = (parms.ring_end - parms.ring_start) / parms.ring_step + 1
-
-        self.tasks.read = pm.get_task('read', 
-                path = parms.img_path,
-                number = parms.number_of_images,
-                start = parms.start)
-        self.tasks.write = pm.get_task('write', filename = parms.out_file)
-        self.tasks.crop = pm.get_task('crop', 
-                x = parms.xshift, y = parms.yshift, 
-                width = 1024, height = 1024)
-        self.tasks.brightness = pm.get_task('brightness-cut', 
-                low = 1.0, 
-                high = 3.0)
-
-        self.tasks.gen_ring_patterns = pm.get_task('ring_pattern',
-                ring_start = parms.ring_start,
-                ring_step = parms.ring_step,
-                ring_end = parms.ring_end,
-                ring_thickness = parms.ring_thickness,
-                width = 1024/scale, height = 1024/scale)
-        self.tasks.ring_pattern_loop = pm.get_task('buffer',
-                dup_count = parms.number_of_images, 
-                loop = 1)
-        self.tasks.hessian_kernel = pm.get_task('hessian_kernel',
-                sigma = 2.0 / scale,
-                width = 1024 / scale,
-                height = 1024 / scale)
-        self.tasks.hessian_kernel_loop = pm.get_task('buffer',
-                dup_count = parms.number_of_images,
-                loop = 1)
-
-        self.tasks.rescale = pm.get_task('rescale', factor = 1.0 / scale)
-        self.tasks.contrast = pm.get_task('contrast', remove_high = 0)
-        self.tasks.denoise = pm.get_task('denoise', matrix_size = int(14/scale))
-
-        self.tasks.hough_convolve     = pm.get_task('fftconvolution')
-        self.tasks.hessian_convolve   = pm.get_task('fftconvolution')
-        self.tasks.hessian_analysis   = pm.get_task('hessian_analysis')
-        self.tasks.hessian_stack      = pm.get_task('stack', number=ring_count)
-
-        self.tasks.local_maxima = pm.get_task('local-maxima', sigma=parms.maxima_sigma)
-        self.tasks.label_cluster = pm.get_task('label-cluster')
-        self.tasks.combine_test = pm.get_task('combine-test')
-        self.tasks.blob_test = pm.get_task('blob_test', alpha=parms.blob_alpha)
-
-        self.tasks.sum = pm.get_task('sum')
-        self.tasks.log = pm.get_task('log')
-        self.tasks.null = pm.get_task('null')
-
-        self.tasks.stack1 = pm.get_task('stack', number=ring_count)
-        self.tasks.stack2 = pm.get_task('stack', number=ring_count)
-        self.tasks.stack3 = pm.get_task('stack', number=ring_count)
-        self.tasks.unstack1 = pm.get_task('slice')
-        self.tasks.unstack2 = pm.get_task('slice')
-        self.tasks.monitor = pm.get_task('monitor')
-        self.tasks.monitor1 = pm.get_task('monitor')
-
-        self.tasks.bc_contrast = Ufo.CopyTask()
-        self.tasks.bc_hessian = Ufo.CopyTask()
-        self.tasks.ring_writer = pm.get_task('ring_writer')
-
 
     def setup_graph(self):
         branch1 = ['read', 'crop', 'rescale', 'contrast', 'brightness']
-        branch2 = ['gen_ring_patterns', 'ring_pattern_loop']
+        branch2 = ['ring_pattern', 'ring_pattern_loop']
         branch3 = ['hessian_kernel', 'hessian_kernel_loop']
         branch4 = ['hessian_convolve', 'hessian_analysis', 'bc_hessian', 'stack1', 'unstack1']
         branch5 = ['bc_hessian', 'local_maxima', 'label_cluster', 'stack2', 'combine_test', 'unstack2']
         branch6 = ['blob_test', 'stack3', 'sum', 'write']
 
-        branch1 = [self.tasks.get(n) for n in branch1]
-        branch2 = [self.tasks.get(n) for n in branch2]
-        branch3 = [self.tasks.get(n) for n in branch3]
-        branch4 = [self.tasks.get(n) for n in branch4]
-        branch5 = [self.tasks.get(n) for n in branch5]
-        branch6 = [self.tasks.get(n) for n in branch6]
+
+        b1 = [self.tasks[n] for n in branch1]
+        b2 = [self.tasks[n] for n in branch2]
+        b3 = [self.tasks[n] for n in branch3]
+        b4 = [self.tasks[n] for n in branch4]
+        b5 = [self.tasks[n] for n in branch5]
+        b6 = [self.tasks[n] for n in branch6]
         hough_convolve = self.tasks.hough_convolve
 
-        self.graph.merge_branch(branch1, branch2, hough_convolve)
-        self.graph.merge_branch(hough_convolve, branch3, branch4)
-        self.graph.merge_branch(branch4, branch5, branch6)
 
-    def setup_schedule(self):
-        self.sched.props.enable_tracing = self.parms.profiling # profiling
-        if self.parms.get('device') is 'CPU':
-            resource = Ufo.Resources(device_type=Ufo.DeviceType.CPU)
-        else:
-            resource = Ufo.Resources(device_type=Ufo.DeviceType.GPU)
-        self.sched.set_resources(resource)
+        self.graph.merge_branch(b1, b2, hough_convolve)
+        self.graph.merge_branch(hough_convolve, b3, b4)
+        self.graph.merge_branch(b4, b5, b6)
 
+    def setup_tasks(self):
+        p = self.parms
+        scale = p.scale
+        ring_count = (p.ring_end - p.ring_start) / p.ring_step + 1
 
-    def run(self):
-        self.setup_schedule()
-        self.sched.run(self.graph)
+        self.add_task('read', path=p.img_path, number=p.number_of_images, start=p.start)
+        self.add_task('write', filename=p.out_file)
+        self.add_task('crop', x=p.xshift, y=p.yshift, width=1024, height=1024)
+        self.add_task('brightness', 'brightness-cut', low=1.0, high=3.0)
+        self.add_task('rescale', factor=1.0/scale)
+        self.add_task('contrast', remove_high=0)
+        self.add_task('denoise', matrix_size=int(14/scale))
 
+        self.add_task('ring_pattern', ring_start=p.ring_start, ring_end=p.ring_end,
+                            ring_step=p.ring_step, ring_thickness=p.ring_thickness,
+                            width=1024/scale, height=1024/scale)
+        self.add_task('ring_pattern_loop', 'buffer', dup_count=p.number_of_images, loop=1)
+        self.add_task('hough_convolve', 'fftconvolution')
 
-    def run_t(self, n=1):
-        def timer_function():
-            self.sched.run(self.graph)
+        self.add_task('hessian_kernel', sigma=2.0/scale, width=1024/scale, height=1024/scale)
+        self.add_task('hessian_kernel_loop', 'buffer', dup_count=p.number_of_images, loop=1)
+        self.add_task('hessian_convolve', 'fftconvolution')
+        self.add_task('hessian_analysis')
+        self.add_task('hessian_stack', 'stack', number=ring_count)
 
-        self.setup_schedule()
-        tm = Timer(timer_function)
-        t = tm.timeit(n)
-        return t
+        
+        self.add_task('local_maxima', sigma=p.maxima_sigma)
+        self.add_task('label_cluster', 'label-cluster')
+        self.add_task('combine_test', 'combine-test')
+        self.add_task('blob_test', alpha=p.blob_alpha)
+        self.add_task('sum')
+        self.add_task('ring_writer')
 
-       
+        self.add_task('null')
+        self.add_task('log')
 
+        self.add_task('stack1', 'stack', number=ring_count)
+        self.add_task('stack2', 'stack', number=ring_count)
+        self.add_task('stack3', 'stack', number=ring_count)
+        self.add_task('unstack1', 'slice')
+        self.add_task('unstack2', 'slice')
+        self.add_task('monitor1', 'monitor')
+        self.add_task('monitor2', 'monitor')
 
-
+        self.add_copy_task('bc_contrast')
+        self.add_copy_task('bc_hessian')
