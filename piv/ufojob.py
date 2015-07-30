@@ -8,16 +8,17 @@ import json
 class UfoJob(object):
     _default_parms = dict(
             profiling = False,
-            device = 'GPU'
+            device = 'GPU',
+            sched = 'Normal'
             )
 
     def __init__(self, parms={}):
-        self.pm = PluginManager()
-        self.graph = TaskGraph()
-        self.sched= Ufo.Scheduler()
-        self.tasks = DotDict()
         self.parms = DotDict(self._default_parms)
         self.parms.update(parms)
+        self.tasks = DotDict()
+        self.pm = PluginManager()
+        self.graph = TaskGraph()
+        self.sched= None 
 
     def branch(self, *args):
         return [self.tasks.get(n) for n in args]
@@ -35,20 +36,29 @@ class UfoJob(object):
         self.tasks[taskname] = task
 
     def run(self):
-        self.setup_schedule()
+        self.setup_scheduler()
         self.sched.run(self.graph)
 
     def run_t(self, n=1):
         def timer_function():
             self.sched.run(self.graph)
-        self.setup_schedule()
+        self.setup_scheduler()
         tm = Timer(timer_function)
         t = tm.timeit(n)
         return t
 
-    def setup_schedule(self):
+    def init_scheduler(self, type):
+        if type is 'Fixed':
+            self.sched = Ufo.FixedScheduler()
+        else:
+            self.sched = Ufo.Scheduler()
+
+    def setup_scheduler(self):
+        if self.sched is None:
+            self.init_scheduler(self.parms.sched)
         self.sched.props.enable_tracing = self.parms.profiling # profiling
         if self.parms.get('device') is 'CPU':
+            print 'run on cpu'
             resource = Ufo.Resources(device_type=Ufo.DeviceType.CPU)
         else:
             resource = Ufo.Resources(device_type=Ufo.DeviceType.GPU)

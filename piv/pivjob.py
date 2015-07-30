@@ -7,6 +7,7 @@ class PivJob(UfoJob):
     _default_parms = dict(
         device = 'GPU',     # GPU/CPU
         profiling = False,  # True/False
+        sched = '',
         scale = 2,
         ring_start = 6,     # ring sizes
         ring_end = 40,
@@ -27,25 +28,15 @@ class PivJob(UfoJob):
         self.setup_tasks()
 
     def setup_graph(self):
-        branch1 = ['read', 'crop', 'rescale', 'contrast', 'brightness']
-        branch2 = ['ring_pattern', 'ring_pattern_loop']
-        branch3 = ['hessian_kernel', 'hessian_kernel_loop']
-        branch4 = ['hessian_convolve', 'hessian_analysis', 'bc_hessian', 'stack1', 'unstack1']
-        branch5 = ['bc_hessian', 'local_maxima', 'label_cluster', 'stack2', 'combine_test', 'unstack2']
-        branch6 = ['blob_test', 'stack3', 'sum', 'write']
-
-
-        b1 = [self.tasks[n] for n in branch1]
-        b2 = [self.tasks[n] for n in branch2]
-        b3 = [self.tasks[n] for n in branch3]
-        b4 = [self.tasks[n] for n in branch4]
-        b5 = [self.tasks[n] for n in branch5]
-        b6 = [self.tasks[n] for n in branch6]
-        hough_convolve = self.tasks.hough_convolve
-
-
-        self.graph.merge_branch(b1, b2, hough_convolve)
-        self.graph.merge_branch(hough_convolve, b3, b4)
+        b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'brightness')
+        b2 = self.branch('ring_pattern', 'ring_pattern_loop')
+        b3 = self.branch('hessian_kernel', 'hessian_kernel_loop')
+        b4 = self.branch('hessian_convolve', 'hessian_analysis', 'bc_hessian', 'stack1', 'unstack1')
+        b5 = self.branch('bc_hessian', 'local_maxima', 'label_cluster', 'stack2', 'combine_test', 'unstack2')
+        b6 = self.branch('blob_test', 'stack3', 'sum', 'write')
+        hough = self.tasks.hough_convolve
+        self.graph.merge_branch(b1, b2, hough)
+        self.graph.merge_branch(hough, b3, b4)
         self.graph.merge_branch(b4, b5, b6)
 
     def setup_tasks(self):
