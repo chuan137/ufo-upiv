@@ -17,69 +17,93 @@
  * License along with this library.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+
+#ifdef __APPLE__
+#include <OpenCL/cl.h>
+#else
+#include <CL/cl.h>
+#endif
+
+
 #include <stdlib.h>
 #include <string.h>
 #include "ufo-combine-test-task.h"
 
 
 struct _UfoCombineTestTaskPrivate {
+
+    cl_kernel arithmetic_kernel;
     gboolean foo;
+
 };
 
 static void ufo_task_interface_init (UfoTaskIface *iface);
 
 G_DEFINE_TYPE_WITH_CODE (UfoCombineTestTask, ufo_combine_test_task, UFO_TYPE_TASK_NODE,
-                         G_IMPLEMENT_INTERFACE (UFO_TYPE_TASK,
-                                                ufo_task_interface_init))
+        G_IMPLEMENT_INTERFACE (UFO_TYPE_TASK,
+            ufo_task_interface_init))
 
 #define UFO_COMBINE_TEST_TASK_GET_PRIVATE(obj) (G_TYPE_INSTANCE_GET_PRIVATE((obj), UFO_TYPE_COMBINE_TEST_TASK, UfoCombineTestTaskPrivate))
 
-enum {
-    PROP_0,
-    PROP_TEST,
-    N_PROPERTIES
-};
+    enum {
+        PROP_0,
+        PROP_TEST,
+        N_PROPERTIES
+    };
 
 static GParamSpec *properties[N_PROPERTIES] = { NULL, };
 
-UfoNode *
+    UfoNode *
 ufo_combine_test_task_new (void)
 {
     return UFO_NODE (g_object_new (UFO_TYPE_COMBINE_TEST_TASK, NULL));
 }
 
-static void
+    static void
 ufo_combine_test_task_setup (UfoTask *task,
-                       UfoResources *resources,
-                       GError **error)
+        UfoResources *resources,
+        GError **error)
 {
+
+    UfoCombineTestTaskPrivate *priv;
+
+
+    priv = UFO_COMBINE_TEST_TASK_GET_PRIVATE (task);
+    priv->arithmetic_kernel = ufo_resources_get_kernel(resources, "combine.cl",NULL,error);
+    if(priv->arithmetic_kernel != NULL)
+    {
+        UFO_RESOURCES_CHECK_CLERR (clRetainKernel (priv->arithmetic_kernel));
+    }	
+
+
 }
 
-static void
+    static void
 ufo_combine_test_task_get_requisition (UfoTask *task,
-                                 UfoBuffer **inputs,
-                                 UfoRequisition *requisition)
+        UfoBuffer **inputs,
+        UfoRequisition *requisition)
 {
     ufo_buffer_get_requisition (inputs[0], requisition);
 }
 
-static guint
+    static guint
 ufo_combine_test_task_get_num_inputs (UfoTask *task)
 {
     return 1;
 }
 
-static guint
+    static guint
 ufo_combine_test_task_get_num_dimensions (UfoTask *task,
-                                             guint input)
+        guint input)
 {
     return 3;
 }
 
-static UfoTaskMode
+    static UfoTaskMode
 ufo_combine_test_task_get_mode (UfoTask *task)
 {
-    return UFO_TASK_MODE_PROCESSOR | UFO_TASK_MODE_CPU;
+    //not quite sure what is right here 
+    return UFO_TASK_MODE_PROCESSOR | UFO_TASK_MODE_GPU;
 }
 
 static void
@@ -104,55 +128,65 @@ or_op(gfloat *out, gfloat *a, gfloat *b, unsigned n) {
     }
 }
 
-static gboolean
+    static gboolean
 ufo_combine_test_task_process (UfoTask *task,
-                         UfoBuffer **inputs,
-                         UfoBuffer *output,
-                         UfoRequisition *requisition)
+        UfoBuffer **inputs,
+        UfoBuffer *output,
+        UfoRequisition *requisition)
 {
-    gfloat *in_mem = ufo_buffer_get_host_array (inputs[0], NULL);
-    gfloat *out_mem = ufo_buffer_get_host_array (output, NULL);
+    UfoCombineTestTaskPrivate *priv;
+    UfoGpuNode *node;
+    UfoProfiler *profiler;
+    cl_command_queue cmd_queue;
+   
+    cl_mem in_mem_gpu;
+    cl_mem out_mem_gpu;
+   
+    unsigned int counter;
+    unsigned mem_size_p;
+    gsize mem_size_c;
+    priv = UFO_COMBINE_TEST_TASK_GET_PRIVATE (task);
 
-    unsigned mem_size_p = requisition->dims[0] * requisition->dims[1];
-    gsize mem_size = mem_size_p * sizeof (gfloat);
+    node = UFO_GPU_NODE (ufo_task_node_get_proc_node (UFO_TASK_NODE (task)));
+    cmd_queue = ufo_gpu_node_get_cmd_queue (node);
 
-    gfloat *tmp1_mem = g_malloc0(mem_size);
-    gfloat *tmp2_mem = g_malloc0(mem_size);
-    gfloat *tmp3_mem = g_malloc0(mem_size);
+    in_mem_gpu = ufo_buffer_get_device_array(inputs[0],cmd_queue);
+    out_mem_gpu = ufo_buffer_get_device_array(output,cmd_queue);
 
-    and_op(tmp1_mem, in_mem, in_mem + mem_size_p, mem_size_p);
-    memcpy (out_mem, tmp1_mem, mem_size);
+    mem_size_p = requisition->dims[0] * requisition->dims[1];
+    mem_size_c = (gsize) mem_size_p;
+    counter = requisition->dims[2]-1;
 
-    unsigned i;
-    for (i = 1; i < requisition->dims[2]-1; i++) {
-        /*memcpy(tmp3_mem, in_mem + i * mem_size, mem_size);*/
-        /*memcpy(tmp4_mem, in_mem + (i+1) * mem_size, mem_size);*/
-        /*and_op(tmp2_mem, tmp3_mem, tmp4_mem, mem_size_p);*/
-        //or_op(out_mem + i*mem_size_p, tmp1_mem, tmp2_mem, mem_size_p);
-        and_op(tmp2_mem, in_mem + i*mem_size_p, in_mem + (i+1)*mem_size_p, mem_size_p);
-        or_op (tmp3_mem, tmp1_mem, tmp2_mem, mem_size_p);
+    profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
 
-        memcpy (out_mem + i * mem_size_p, tmp3_mem, mem_size);
 
-        memcpy(tmp1_mem, tmp2_mem, mem_size);
-        memset(tmp2_mem, 0, mem_size);
-    }
-    memcpy (out_mem + i * mem_size_p, tmp1_mem, mem_size);
+    //	gfloat *in_mem = ufo_buffer_get_host_array (inputs[0], NULL);
+    //why do I need the Host Memory ? When not used the error comes that CL_OUT_OF_RESOURCES
+   
+   // gfloat *out_mem = ufo_buffer_get_host_array (output, NULL);
 
-    free (tmp1_mem);
-    free (tmp2_mem);
-    free (tmp3_mem);
+
+    
+
+
+    UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->arithmetic_kernel,0,sizeof(cl_mem), &in_mem_gpu));
+    UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->arithmetic_kernel,1,sizeof(cl_mem), &out_mem_gpu));
+    UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->arithmetic_kernel,2,sizeof(cl_uint), &counter));
+    UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->arithmetic_kernel,3,sizeof(cl_uint), &mem_size_p));
+ //   UFO_RESOURCES_CHECK_CLERR(	clEnqueueNDRangeKernel(cmd_queue,priv->arithmetic_kernel, 1, NULL, &mem_size, NULL,0,NULL,NULL));
+//    clFinish(cmd_queue);
+    	ufo_profiler_call(profiler,cmd_queue, priv->arithmetic_kernel,1,&mem_size_c,NULL);
     return TRUE;
 }
 
-static void
+    static void
 ufo_combine_test_task_set_property (GObject *object,
-                              guint property_id,
-                              const GValue *value,
-                              GParamSpec *pspec)
+        guint property_id,
+        const GValue *value,
+        GParamSpec *pspec)
 {
-    UfoCombineTestTaskPrivate *priv = UFO_COMBINE_TEST_TASK_GET_PRIVATE (object);
-
+    UfoCombineTestTaskPrivate *priv;
+    priv = UFO_COMBINE_TEST_TASK_GET_PRIVATE (object);
     switch (property_id) {
         case PROP_TEST:
             break;
@@ -162,11 +196,11 @@ ufo_combine_test_task_set_property (GObject *object,
     }
 }
 
-static void
+    static void
 ufo_combine_test_task_get_property (GObject *object,
-                              guint property_id,
-                              GValue *value,
-                              GParamSpec *pspec)
+        guint property_id,
+        GValue *value,
+        GParamSpec *pspec)
 {
     UfoCombineTestTaskPrivate *priv = UFO_COMBINE_TEST_TASK_GET_PRIVATE (object);
 
@@ -179,13 +213,22 @@ ufo_combine_test_task_get_property (GObject *object,
     }
 }
 
-static void
+    static void
 ufo_combine_test_task_finalize (GObject *object)
-{
+{ 
+
+    UfoCombineTestTaskPrivate *priv;
+    priv = UFO_COMBINE_TEST_TASK_GET_PRIVATE (object);	
+    if(priv->arithmetic_kernel)
+    {
+        UFO_RESOURCES_CHECK_CLERR (clReleaseKernel (priv->arithmetic_kernel));
+        priv->arithmetic_kernel = NULL;
+    }
+
     G_OBJECT_CLASS (ufo_combine_test_task_parent_class)->finalize (object);
 }
 
-static void
+    static void
 ufo_task_interface_init (UfoTaskIface *iface)
 {
     iface->setup = ufo_combine_test_task_setup;
@@ -196,7 +239,7 @@ ufo_task_interface_init (UfoTaskIface *iface)
     iface->process = ufo_combine_test_task_process;
 }
 
-static void
+    static void
 ufo_combine_test_task_class_init (UfoCombineTestTaskClass *klass)
 {
     GObjectClass *oclass = G_OBJECT_CLASS (klass);
@@ -207,10 +250,10 @@ ufo_combine_test_task_class_init (UfoCombineTestTaskClass *klass)
 
     properties[PROP_TEST] =
         g_param_spec_string ("test",
-            "Test property nick",
-            "Test property description blurb",
-            "",
-            G_PARAM_READWRITE);
+                "Test property nick",
+                "Test property description blurb",
+                "",
+                G_PARAM_READWRITE);
 
     for (guint i = PROP_0 + 1; i < N_PROPERTIES; i++)
         g_object_class_install_property (oclass, i, properties[i]);
@@ -218,7 +261,7 @@ ufo_combine_test_task_class_init (UfoCombineTestTaskClass *klass)
     g_type_class_add_private (oclass, sizeof(UfoCombineTestTaskPrivate));
 }
 
-static void
+    static void
 ufo_combine_test_task_init(UfoCombineTestTask *self)
 {
     self->priv = UFO_COMBINE_TEST_TASK_GET_PRIVATE(self);
