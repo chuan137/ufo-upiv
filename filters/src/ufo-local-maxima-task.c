@@ -17,6 +17,16 @@
  * License along with this library.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+
+
+
+#ifdef __APPLE__
+#include <OpenCL/cl.h>
+#else
+#include <CL/cl.h>
+#endif
+
+
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -24,6 +34,9 @@
 
 
 struct _UfoLocalMaximaTaskPrivate {
+    cl_kernel locmax_kernel;
+
+
     gfloat sigma;
 };
 
@@ -56,6 +69,17 @@ ufo_local_maxima_task_setup (UfoTask *task,
                        UfoResources *resources,
                        GError **error)
 {
+    UfoLocalMaximaTaskPrivate* priv;
+
+    priv = UFO_LOCAL_MAXIMA_TASK_GET_PRIVATE(task);
+    priv->locmax_kernel = ufo_resources_get_kernel(resources,"localmax.cl",NULL,error);
+
+    if(priv->locmax_kernel != NULL)
+    {
+        UFO_RESOURCES_CHECK_CLERR(clRetainKernel (priv->locmax_kernel));
+    }   
+
+
 }
 
 static void
@@ -89,7 +113,7 @@ ufo_local_maxima_task_get_num_dimensions (UfoTask *task,
 static UfoTaskMode
 ufo_local_maxima_task_get_mode (UfoTask *task)
 {
-    return UFO_TASK_MODE_PROCESSOR | UFO_TASK_MODE_CPU;
+    return UFO_TASK_MODE_PROCESSOR | UFO_TASK_MODE_GPU;
 }
 
 static gboolean
@@ -98,33 +122,63 @@ ufo_local_maxima_task_process (UfoTask *task,
                          UfoBuffer *output,
                          UfoRequisition *requisition)
 {
+
     UfoLocalMaximaTaskPrivate *priv = UFO_LOCAL_MAXIMA_TASK_GET_PRIVATE (task);
     gfloat sigma = priv->sigma;
+    
+    UfoGpuNode *node;
+    UfoProfiler *profiler;
+    cl_command_queue cmd_queue;
+    
+    
+    gfloat* in_mem = NULL;
 
-    gfloat * in_mem = ufo_buffer_get_host_array (inputs[0], NULL);
-    gsize img_size = ufo_buffer_get_size(inputs[0]);
-    unsigned img_size_p = img_size / sizeof (gfloat);
-    // g_warning ("LocalMaxima: input image size = %u", img_size_p);
-    // img_size: image size in bytes
-    // img_size_p: image size in pixels
+    cl_mem in_mem_gpu;
+    cl_mem out_mem_gpu;
 
-    gfloat * out_mem = ufo_buffer_get_host_array(output, NULL);
-    memset (out_mem, 0, img_size);
-    // memcpy (out_mem + img_size_p, in_mem, img_size);
-    // input image is attached to output
+    gfloat mean;
+    gfloat std;
+    gfloat mean_sigma_std;
 
-    gfloat mean = array_mean(in_mem, img_size_p);
-    gfloat std = array_std(in_mem, mean, img_size_p);
-    // g_warning ("LocalMaxima: mean, std = %6.2e %6.2e", mean, std);
+    gsize img_size;
+    gsize img_size_p;
 
-    unsigned ct = 0;
-    for (unsigned i = 0; i < img_size_p; i++) {
-        if (in_mem[i] > mean + sigma * std) {
-            out_mem[i] = 1.0f;
-            ct++;
-        }
-    }
-    // printf ("LocalMaxima: number of filtered pixels = %u\n", ct);
+
+    node = UFO_GPU_NODE (ufo_task_node_get_proc_node (UFO_TASK_NODE (task)));
+    cmd_queue = ufo_gpu_node_get_cmd_queue (node);
+
+
+    in_mem_gpu = ufo_buffer_get_device_array(inputs[0], cmd_queue);
+    out_mem_gpu = ufo_buffer_get_device_array(output,cmd_queue);
+
+    profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
+    in_mem = ufo_buffer_get_host_array(inputs[0],NULL);
+
+   
+    img_size = ufo_buffer_get_size(inputs[0]);
+    img_size_p = (gsize) (img_size/sizeof(gfloat));
+
+
+
+ 
+    mean = array_mean(in_mem, img_size_p);
+    std = array_std(in_mem, mean, img_size_p);
+
+    
+    mean_sigma_std = mean + sigma * std;
+
+
+
+
+    
+
+    UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->locmax_kernel,0,sizeof(cl_mem), &in_mem_gpu));
+    UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->locmax_kernel,1,sizeof(cl_mem), &out_mem_gpu));
+    UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->locmax_kernel,2,sizeof(cl_float), &mean_sigma_std));
+
+
+    ufo_profiler_call(profiler,cmd_queue, priv->locmax_kernel,1,&img_size_p,NULL);
+
     
     return TRUE;
 }
@@ -168,6 +222,16 @@ ufo_local_maxima_task_get_property (GObject *object,
 static void
 ufo_local_maxima_task_finalize (GObject *object)
 {
+
+    UfoLocalMaximaTaskPrivate* priv;
+    priv = UFO_LOCAL_MAXIMA_TASK_GET_PRIVATE(object);
+
+    if(priv->locmax_kernel)
+    {
+        UFO_RESOURCES_CHECK_CLERR(clReleaseKernel(priv->locmax_kernel));
+        priv->locmax_kernel = NULL;
+    }
+       
     G_OBJECT_CLASS (ufo_local_maxima_task_parent_class)->finalize (object);
 }
 
