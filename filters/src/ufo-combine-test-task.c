@@ -18,6 +18,8 @@
  */
 
 
+//last edited by Kevin Alexander Hoefle, 01.07.15
+
 #ifdef __APPLE__
 #include <OpenCL/cl.h>
 #else
@@ -45,21 +47,21 @@ G_DEFINE_TYPE_WITH_CODE (UfoCombineTestTask, ufo_combine_test_task, UFO_TYPE_TAS
 
 #define UFO_COMBINE_TEST_TASK_GET_PRIVATE(obj) (G_TYPE_INSTANCE_GET_PRIVATE((obj), UFO_TYPE_COMBINE_TEST_TASK, UfoCombineTestTaskPrivate))
 
-    enum {
-        PROP_0,
-        PROP_TEST,
-        N_PROPERTIES
-    };
+enum {
+    PROP_0,
+    PROP_TEST,
+    N_PROPERTIES
+};
 
 static GParamSpec *properties[N_PROPERTIES] = { NULL, };
 
-    UfoNode *
+UfoNode *
 ufo_combine_test_task_new (void)
 {
     return UFO_NODE (g_object_new (UFO_TYPE_COMBINE_TEST_TASK, NULL));
 }
 
-    static void
+static void
 ufo_combine_test_task_setup (UfoTask *task,
         UfoResources *resources,
         GError **error)
@@ -78,7 +80,7 @@ ufo_combine_test_task_setup (UfoTask *task,
 
 }
 
-    static void
+static void
 ufo_combine_test_task_get_requisition (UfoTask *task,
         UfoBuffer **inputs,
         UfoRequisition *requisition)
@@ -86,26 +88,29 @@ ufo_combine_test_task_get_requisition (UfoTask *task,
     ufo_buffer_get_requisition (inputs[0], requisition);
 }
 
-    static guint
+static guint
 ufo_combine_test_task_get_num_inputs (UfoTask *task)
 {
     return 1;
 }
 
-    static guint
+static guint
 ufo_combine_test_task_get_num_dimensions (UfoTask *task,
         guint input)
 {
     return 3;
 }
 
-    static UfoTaskMode
+static UfoTaskMode
 ufo_combine_test_task_get_mode (UfoTask *task)
 {
-    //not quite sure what is right here 
     return UFO_TASK_MODE_PROCESSOR | UFO_TASK_MODE_GPU;
 }
 
+
+
+
+//functions are not used atm due to GPU execution
 static void
 and_op(gfloat *out, gfloat *a, gfloat *b, unsigned n) {
     for (unsigned i = 0; i < n; i++) {
@@ -160,10 +165,6 @@ ufo_combine_test_task_process (UfoTask *task,
     profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
 
 
-    //	gfloat *in_mem = ufo_buffer_get_host_array (inputs[0], NULL);
-    //why do I need the Host Memory ? When not used the error comes that CL_OUT_OF_RESOURCES
-   
-   // gfloat *out_mem = ufo_buffer_get_host_array (output, NULL);
 
 
     
@@ -173,9 +174,12 @@ ufo_combine_test_task_process (UfoTask *task,
     UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->arithmetic_kernel,1,sizeof(cl_mem), &out_mem_gpu));
     UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->arithmetic_kernel,2,sizeof(cl_uint), &counter));
     UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->arithmetic_kernel,3,sizeof(cl_uint), &mem_size_p));
- //   UFO_RESOURCES_CHECK_CLERR(	clEnqueueNDRangeKernel(cmd_queue,priv->arithmetic_kernel, 1, NULL, &mem_size, NULL,0,NULL,NULL));
-//    clFinish(cmd_queue);
-    	ufo_profiler_call(profiler,cmd_queue, priv->arithmetic_kernel,1,&mem_size_c,NULL);
+    	
+
+
+    ufo_profiler_call(profiler,cmd_queue, priv->arithmetic_kernel,1,&mem_size_c,NULL);
+    
+
     return TRUE;
 }
 
