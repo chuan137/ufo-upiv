@@ -17,6 +17,7 @@ set(ufofilter_SRCS
     ufo-sum-task.c
     ufo-log-task.c
     ufo-brightness-cut-task.c
+    ufo-contrast-task.c
     )
 
 #}}}

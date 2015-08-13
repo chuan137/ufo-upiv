@@ -14,6 +14,8 @@ class PivJob(UfoJob):
         ring_step = 2,
         ring_thickness = 6,
         number_of_images = 1,   # input image
+        sigma_top = 9,
+        sigma_bottom = -4,
         start = 0,
         xshift = 0,
         yshift = 0,
