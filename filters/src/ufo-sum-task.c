@@ -19,75 +19,80 @@
 
 #include <math.h>
 #include <string.h>
+#include <pthread.h>
 #include "ufo-sum-task.h"
-
+#include <stdio.h>
+#include "threads/sum_task.h"
 
 struct _UfoSumTaskPrivate {
     gboolean foo;
+
+
 };
+
 
 static void ufo_task_interface_init (UfoTaskIface *iface);
 
 G_DEFINE_TYPE_WITH_CODE (UfoSumTask, ufo_sum_task, UFO_TYPE_TASK_NODE,
-                         G_IMPLEMENT_INTERFACE (UFO_TYPE_TASK,
-                                                ufo_task_interface_init))
+        G_IMPLEMENT_INTERFACE (UFO_TYPE_TASK,
+            ufo_task_interface_init))
 
 #define UFO_SUM_TASK_GET_PRIVATE(obj) (G_TYPE_INSTANCE_GET_PRIVATE((obj), UFO_TYPE_SUM_TASK, UfoSumTaskPrivate))
 
-enum {
-    PROP_0,
-    PROP_TEST,
-    N_PROPERTIES
-};
+    enum {
+        PROP_0,
+        PROP_TEST,
+        N_PROPERTIES
+    };
 
 static GParamSpec *properties[N_PROPERTIES] = { NULL, };
 
-UfoNode *
+    UfoNode *
 ufo_sum_task_new (void)
 {
     return UFO_NODE (g_object_new (UFO_TYPE_SUM_TASK, NULL));
 }
 
-static void
+    static void
 ufo_sum_task_setup (UfoTask *task,
-                       UfoResources *resources,
-                       GError **error)
+        UfoResources *resources,
+        GError **error)
 {
 }
 
-static void
+    static void
 ufo_sum_task_get_requisition (UfoTask *task,
-                                 UfoBuffer **inputs,
-                                 UfoRequisition *requisition)
+        UfoBuffer **inputs,
+        UfoRequisition *requisition)
 {
     ufo_buffer_get_requisition (inputs[0], requisition);
     requisition->n_dims = 2;
 }
 
-static guint
+    static guint
 ufo_sum_task_get_num_inputs (UfoTask *task)
 {
     return 1;
 }
 
-static guint
+    static guint
 ufo_sum_task_get_num_dimensions (UfoTask *task,
-                                             guint input)
+        guint input)
 {
     return 3;
 }
 
-static UfoTaskMode
+    static UfoTaskMode
 ufo_sum_task_get_mode (UfoTask *task)
 {
     return UFO_TASK_MODE_PROCESSOR | UFO_TASK_MODE_CPU;
 }
 
-static gboolean
+    static gboolean
 ufo_sum_task_process (UfoTask *task,
-                         UfoBuffer **inputs,
-                         UfoBuffer *output,
-                         UfoRequisition *requisition)
+        UfoBuffer **inputs,
+        UfoBuffer *output,
+        UfoRequisition *requisition)
 {
     UfoRequisition req;
     ufo_buffer_get_requisition (inputs[0], &req);
@@ -98,16 +103,50 @@ ufo_sum_task_process (UfoTask *task,
 
     memset (out_mem, 0, size * sizeof(gfloat));
 
-    for (unsigned n = 0; n < req.dims[2]; n++) {
-        for (unsigned i = 0; i < size; i++) {
-            if (in_mem[i] > 0.001) {
-                out_mem[i] += in_mem[i];
-            }
+
+    pthread_mutex_t loc_mutex;
+    pthread_mutex_init(&loc_mutex,NULL);
+
+
+    unsigned n,i;
+    pthread_t thr[(unsigned int) req.dims[2]];
+    sum_thread thr_data[(unsigned int) req.dims[2]];
+
+
+
+    int rc;    
+
+    for (n = 0; n < req.dims[2]; n++) {
+
+        thr_data[n].mutex = &loc_mutex;
+        thr_data[n].tid = n;
+        thr_data[n].ptr = in_mem + n*size; //always jump to the next picture
+        thr_data[n].size = size;
+        thr_data[n].result = out_mem; //always jump one further
+        if ((rc = pthread_create(&thr[n], NULL, sum, &thr_data[n]))) {
+            fprintf(stderr, "error: pthread_create, rc: %d\n", rc);
         }
-        in_mem += size;
+
+
+
     }
 
-    for (unsigned i = 0; i < size; i++) {
+
+
+    for(n = 0; n < req.dims[2];n++)
+    {
+        pthread_join(thr[n], NULL);
+
+    }   
+
+    if(pthread_mutex_destroy(&loc_mutex) == -1)
+    {       
+        printf("ERROR\n");
+    }   
+
+
+
+    for (i = 0; i < size; i++) {
         if (out_mem[i] > 0.0001)
             out_mem[i] = 1.0f;
     }
@@ -115,11 +154,11 @@ ufo_sum_task_process (UfoTask *task,
     return TRUE;
 }
 
-static void
+    static void
 ufo_sum_task_set_property (GObject *object,
-                              guint property_id,
-                              const GValue *value,
-                              GParamSpec *pspec)
+        guint property_id,
+        const GValue *value,
+        GParamSpec *pspec)
 {
     UfoSumTaskPrivate *priv = UFO_SUM_TASK_GET_PRIVATE (object);
     (void) priv;
@@ -133,11 +172,11 @@ ufo_sum_task_set_property (GObject *object,
     }
 }
 
-static void
+    static void
 ufo_sum_task_get_property (GObject *object,
-                              guint property_id,
-                              GValue *value,
-                              GParamSpec *pspec)
+        guint property_id,
+        GValue *value,
+        GParamSpec *pspec)
 {
     UfoSumTaskPrivate *priv = UFO_SUM_TASK_GET_PRIVATE (object);
     (void) priv;
@@ -151,13 +190,13 @@ ufo_sum_task_get_property (GObject *object,
     }
 }
 
-static void
+    static void
 ufo_sum_task_finalize (GObject *object)
 {
     G_OBJECT_CLASS (ufo_sum_task_parent_class)->finalize (object);
 }
 
-static void
+    static void
 ufo_task_interface_init (UfoTaskIface *iface)
 {
     iface->setup = ufo_sum_task_setup;
@@ -168,7 +207,7 @@ ufo_task_interface_init (UfoTaskIface *iface)
     iface->process = ufo_sum_task_process;
 }
 
-static void
+    static void
 ufo_sum_task_class_init (UfoSumTaskClass *klass)
 {
     GObjectClass *oclass = G_OBJECT_CLASS (klass);
@@ -179,10 +218,10 @@ ufo_sum_task_class_init (UfoSumTaskClass *klass)
 
     properties[PROP_TEST] =
         g_param_spec_string ("test",
-            "Test property nick",
-            "Test property description blurb",
-            "",
-            G_PARAM_READWRITE);
+                "Test property nick",
+                "Test property description blurb",
+                "",
+                G_PARAM_READWRITE);
 
     for (guint i = PROP_0 + 1; i < N_PROPERTIES; i++)
         g_object_class_install_property (oclass, i, properties[i]);
@@ -190,7 +229,7 @@ ufo_sum_task_class_init (UfoSumTaskClass *klass)
     g_type_class_add_private (oclass, sizeof(UfoSumTaskPrivate));
 }
 
-static void
+    static void
 ufo_sum_task_init(UfoSumTask *self)
 {
     self->priv = UFO_SUM_TASK_GET_PRIVATE(self);
