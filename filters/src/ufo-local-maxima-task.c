@@ -120,7 +120,7 @@ ufo_local_maxima_task_process (UfoTask *task,
     unsigned ct = 0;
     for (unsigned i = 0; i < img_size_p; i++) {
         if (in_mem[i] > mean + sigma * std) {
-            out_mem[i] = 1.0f;
+            out_mem[i] = in_mem[i];
             ct++;
         }
     }
@@ -195,7 +195,7 @@ ufo_local_maxima_task_class_init (UfoLocalMaximaTaskClass *klass)
         g_param_spec_float ("sigma",
             "threshold sigma",
             "set threshold at <sigma> above mean",
-            2.0f, 10.0f, 5.0f,
+            0.0f, 10.0f, 5.0f,
             G_PARAM_READWRITE);
 
     for (guint i = PROP_0 + 1; i < N_PROPERTIES; i++)
