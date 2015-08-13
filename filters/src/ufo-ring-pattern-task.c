@@ -145,14 +145,8 @@ ufo_ring_pattern_task_generate (UfoTask *task,
 
     for (int y = -(dimy / 2); y < dimy / 2; ++y) {
         for (int x = -(dimx / 2); x < dimx / 2; ++x) {
-            double dist = sqrt (x * x + y * y) - priv->ring_current;
-            dist = dist < 0 ? -dist : dist;
-            if (dist < (double) priv->ring_thickness / 2) {
-                out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] /=
-                    (float) counter;
-            }
-            else
-                out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] = 0;
+            out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] 
+                /= (float)counter;
         }
     }
 
