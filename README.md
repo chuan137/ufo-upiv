@@ -9,6 +9,10 @@ upiv code using ufo framework
   * make; make install
 3. source filters/SourceMe.sh
 
+## Sample data files
+They are shared via [google drive](https://drive.google.com/folderview?id=0B-Nh7TaS6iJlfmN4bWtBb0xpc3NscElfY1czVGpjTGk1ZkFOQVdvRDVLOXlMdUU2SW5KT2M&usp=sharing). They should be copied to the paths that are relative to the project root.
+
+
 ## Notice
 
 * Dir filters/ contains the filters made for upiv project. By sourcing the file in step 3, customized path for filters and kernels are set, and the ufo framework know where to look for these filters.
