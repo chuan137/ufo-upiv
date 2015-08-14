@@ -25,6 +25,8 @@ class PivJob(UfoJob):
 
     def __init__(self, parms={}):
         super(PivJob, self).__init__(parms)
+        self.parms.ring_number = \
+            (self.parms.ring_end - self.parms.ring_start) / self.parms.ring_step + 1
         self.setup_tasks()
 
     def setup_graph(self):

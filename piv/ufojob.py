@@ -20,9 +20,6 @@ class UfoJob(object):
         self.graph = TaskGraph()
         self.sched= None 
 
-        self.parms.ring_number = (self.parms.ring_end - self.parms.ring_start)\
-                / self.parms.ring_step + 1
-
     def branch(self, *args):
         return [self.tasks.get(n) for n in args]
 
