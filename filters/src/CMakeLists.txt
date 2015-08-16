@@ -19,6 +19,7 @@ set(ufofilter_SRCS
     ufo-brightness-cut-task.c
     ufo-complex-mult-task.c
     ufo-bilateral-task.c
+    ufo-piv-contrast-task.c
     )
 
 #}}}
