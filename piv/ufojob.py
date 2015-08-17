@@ -1,6 +1,6 @@
 from gi.repository import Ufo
-from .ufo_extension import TaskGraph, PluginManager
-from .ddict import DotDict
+from ufo_extension import TaskGraph, PluginManager
+from ddict import DotDict
 from timeit import Timer
 import types
 import json
@@ -21,7 +21,9 @@ class UfoJob(object):
         self.sched= None 
 
     def branch(self, *args):
-        return [self.tasks.get(n) for n in args]
+        b = [self.tasks.get(n) for n in args]
+        self.graph.connect_branch(b)
+        return b
 
     def add_copy_task(self, taskname):
         task = Ufo.CopyTask()
@@ -35,11 +37,13 @@ class UfoJob(object):
         task = self.pm.get_task(plugin, **kargs)
         self.tasks[taskname] = task
 
-    def run(self):
+    def run(self, profiling=False):
+        self.parms.profiling = self.parms.profiling or profiling
         self.setup_scheduler()
         self.sched.run(self.graph)
 
-    def run_t(self, n=1):
+    def run_t(self, profiling=False, n=1):
+        self.parms.profiling = self.parms.profiling or profiling
         def timer_function():
             self.sched.run(self.graph)
         self.setup_scheduler()
