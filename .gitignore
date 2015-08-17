@@ -25,3 +25,8 @@ filters/src/ufo-test-filter-task.c_bckp_writestoimage
 filters/src/ufo-test-filter-task.h
 filters/src/ufo-combine-test-task.bak.c
 filters/src/ufo-combine-test-task.new.c
+filters/src/ufo-contrast-task.c
+Notes.md
+doc
+
+piv-test*py
