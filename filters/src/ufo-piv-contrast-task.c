@@ -142,53 +142,43 @@ static float sigmoid(float x, float mean, float sigma, float gamma)
     return f1*f2;
 }
 
-static gboolean
-ufo_piv_contrast_task_process (UfoTask *task,
-                         UfoBuffer **inputs,
-                         UfoBuffer *output,
-                         UfoRequisition *requisition)
+static int prepare_test(gfloat** test, gfloat* input, int offset_x, int offset_y, 
+                         int len_x, int len_y, int req_x, int req_y)
 {
-    UfoRequisition input_req;
-    ufo_buffer_get_requisition(inputs[0], &input_req);
-
-    unsigned offset_x = input_req.dims[0] / 4;
-    unsigned offset_y = input_req.dims[1] / 4;
-    unsigned len_x = input_req.dims[0] / 4;
-    unsigned len_y = input_req.dims[1] / 4;
-
-    if ((len_x + offset_x) > input_req.dims[0])
-        len_x = input_req.dims[0] - offset_x;
-    if ((len_y + offset_y) > input_req.dims[0])
-        len_y = input_req.dims[1] - offset_y;
-
-    gfloat *in_mem = ufo_buffer_get_host_array(inputs[0], NULL);
-    gfloat *out_mem = ufo_buffer_get_host_array(output, NULL);
-    gfloat *test_mem = g_malloc0 (len_x*len_y*sizeof(gfloat));
-
-    for (unsigned i = 0; i < len_x; i++) 
-    {
-        for (unsigned j = 0; j < len_y; j++) 
-        {
-            unsigned id = i * len_x + j;
-            unsigned id_0 = (i+offset_x) * input_req.dims[0] + (j+offset_y);
-            test_mem[id] = in_mem[id_0];
+    int id, id_0;
+    len_x= (len_x + offset_x) > req_x ? req_x - offset_x : len_x;
+    len_y = (len_y + offset_y) > req_y ? req_y - offset_y : len_y;
+    *test = (gfloat*) g_malloc0 (len_x * len_y * sizeof(gfloat) );
+    for (int i = 0; i < len_x; i++) {
+        for (int j = 0; j < len_y; j++) {
+            id = i * len_x + j;
+            id_0 = (i+offset_x) * req_x + (j+offset_y);
+            (*test)[id] = input[id_0];
         }
     }
+    return len_x*len_y;
+}
 
-    int n = len_x * len_y;
-    int ct = 0;
-    float low_cut=0, high_cut=10000;
-    float minv = array_min(test_mem, n);
-    float maxv = array_max(test_mem, n);
-    float std = 0, std_old, mean;
+static void approx_bg(gfloat* test, int size, float* m, float* s)
+{
+    int ct;
+    float minv, maxv, low_cut, high_cut, std_old;
+    float mean, std;
+    
+    ct = 0;
+    std = 0.0f;
+    minv = array_min(test, size);
+    maxv = array_max(test, size);
+    low_cut = minv;
+    high_cut = maxv;
 
     while (ct < 10)
     {
         ct++;
         std_old = std;
-        mean = array_mean(test_mem, n, low_cut, high_cut);
-        std = array_std(test_mem, n, mean, low_cut, high_cut);
-        printf("mean = %2.8f std = %2.8f; min = %2.8f max = %2.8f\n", mean, std, minv, maxv);
+        mean = array_mean(test, size, low_cut, high_cut);
+        std = array_std(test, size, mean, low_cut, high_cut);
+        //printf("mean = %2.8f std = %2.8f; min = %2.8f max = %2.8f\n", mean, std, minv, maxv);
 
         high_cut = maxv > mean + 2*std ? mean + 2*std : maxv;
         low_cut = minv < mean - 2*std ? mean - 2*std : minv;
@@ -198,6 +188,37 @@ ufo_piv_contrast_task_process (UfoTask *task,
         if (fabs(std - std_old) / std < 0.05)
             break;
     }
+
+    *m = mean;
+    *s = std;
+}
+
+static gboolean
+ufo_piv_contrast_task_process (UfoTask *task,
+                         UfoBuffer **inputs,
+                         UfoBuffer *output,
+                         UfoRequisition *requisition)
+{
+    unsigned offset_x, offset_y, len_x, len_y, req_x, req_y;
+    gfloat *in_mem, *out_mem;
+    gfloat *test_mem;
+
+    in_mem = ufo_buffer_get_host_array(inputs[0], NULL);
+    out_mem = ufo_buffer_get_host_array(output, NULL);
+
+    req_x = requisition->dims[0];
+    req_y = requisition->dims[1];
+
+    offset_x = req_x / 4;
+    offset_y = req_y / 4;
+    len_x = req_x / 4;
+    len_y = req_y / 4;
+
+    int n;
+    float mean, std;
+    
+    n = prepare_test(&test_mem, in_mem, offset_x, offset_y, len_x, len_y, req_x, req_y);
+    approx_bg(test_mem, n, &mean, &std);
 
     for (unsigned i = 0; i < requisition->dims[0] * requisition->dims[1]; i++) 
     {
@@ -216,6 +237,7 @@ ufo_piv_contrast_task_set_property (GObject *object,
                               GParamSpec *pspec)
 {
     UfoPivContrastTaskPrivate *priv = UFO_PIV_CONTRAST_TASK_GET_PRIVATE (object);
+    (void) priv;
 
     switch (property_id) {
         case PROP_TEST:
@@ -233,6 +255,7 @@ ufo_piv_contrast_task_get_property (GObject *object,
                               GParamSpec *pspec)
 {
     UfoPivContrastTaskPrivate *priv = UFO_PIV_CONTRAST_TASK_GET_PRIVATE (object);
+    (void) priv;
 
     switch (property_id) {
         case PROP_TEST:
