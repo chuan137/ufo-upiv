@@ -18,12 +18,24 @@
  */
 
 #include "ufo-piv-contrast-task.h"
+
 #include <stdio.h>
 #include <math.h>
 
+#ifdef __APPLE__
+#include <OpenCL/cl.h>
+#else
+#include <CL/cl.h>
+#endif
+
 
 struct _UfoPivContrastTaskPrivate {
-    gboolean foo;
+    cl_kernel sigmoid_kernel;
+    gfloat c1;
+    gfloat c2;
+    gfloat c3;
+    gfloat c4;
+    gfloat gamma;
 };
 
 static void ufo_task_interface_init (UfoTaskIface *iface);
@@ -36,7 +48,11 @@ G_DEFINE_TYPE_WITH_CODE (UfoPivContrastTask, ufo_piv_contrast_task, UFO_TYPE_TAS
 
 enum {
     PROP_0,
-    PROP_TEST,
+    PROP_C1,
+    PROP_C2,
+    PROP_C3,
+    PROP_C4,
+    PROP_GAMMA,
     N_PROPERTIES
 };
 
@@ -53,6 +69,10 @@ ufo_piv_contrast_task_setup (UfoTask *task,
                        UfoResources *resources,
                        GError **error)
 {
+    UfoPivContrastTaskPrivate *priv;
+
+    priv = UFO_PIV_CONTRAST_TASK_GET_PRIVATE (task);
+    priv->sigmoid_kernel = ufo_resources_get_kernel (resources, "piv_contrast.cl", "sigmoid", error);
 }
 
 static void
@@ -60,7 +80,16 @@ ufo_piv_contrast_task_get_requisition (UfoTask *task,
                                  UfoBuffer **inputs,
                                  UfoRequisition *requisition)
 {
+    UfoPivContrastTaskPrivate *priv;
+
+    priv = UFO_PIV_CONTRAST_TASK_GET_PRIVATE (task);
     ufo_buffer_get_requisition(inputs[0], requisition);
+
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 4, sizeof(gfloat), &priv->gamma));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 5, sizeof(gfloat), &priv->c1));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 6, sizeof(gfloat), &priv->c2));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 7, sizeof(gfloat), &priv->c3));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 8, sizeof(gfloat), &priv->c4));
 }
 
 static guint
@@ -79,7 +108,7 @@ ufo_piv_contrast_task_get_num_dimensions (UfoTask *task,
 static UfoTaskMode
 ufo_piv_contrast_task_get_mode (UfoTask *task)
 {
-    return UFO_TASK_MODE_PROCESSOR | UFO_TASK_MODE_CPU;
+    return UFO_TASK_MODE_PROCESSOR | UFO_TASK_MODE_GPU;
 }
 
 static float array_min(float *data, int size) 
@@ -126,20 +155,6 @@ static float array_std(float *data, int size, float mean, float low, float high)
         }
     }
     return sqrt(res/ct);
-}
-
-static float sigmoid(float x, float mean, float sigma, float gamma)
-{
-    float f1, f2;
-    if (x < mean + 0.25*sigma || x > mean + 10*sigma) {
-        f1 = 0.0;
-        f2 = 1.0;
-    }
-    else {
-        f1 = 1.0 - 1.0 / (1.0 + exp( (x - mean - 1.0*sigma) / sigma ));
-        f2 = pow(x, gamma);
-    }
-    return f1*f2;
 }
 
 static int prepare_test(gfloat** test, gfloat* input, int offset_x, int offset_y, 
@@ -199,31 +214,44 @@ ufo_piv_contrast_task_process (UfoTask *task,
                          UfoBuffer *output,
                          UfoRequisition *requisition)
 {
+    UfoPivContrastTaskPrivate *priv;
+    UfoGpuNode *node;
+    cl_command_queue cmd_queue;
+    
     unsigned offset_x, offset_y, len_x, len_y, req_x, req_y;
-    gfloat *in_mem, *out_mem;
-    gfloat *test_mem;
-
-    in_mem = ufo_buffer_get_host_array(inputs[0], NULL);
-    out_mem = ufo_buffer_get_host_array(output, NULL);
+    gfloat *in_mem, *test_mem;
+    float mean, std;
+    int n;
+ 
+    priv = UFO_PIV_CONTRAST_TASK_GET_PRIVATE (task);
+    node = UFO_GPU_NODE (ufo_task_node_get_proc_node (UFO_TASK_NODE (task)));
+    cmd_queue = ufo_gpu_node_get_cmd_queue (node);
 
     req_x = requisition->dims[0];
     req_y = requisition->dims[1];
-
     offset_x = req_x / 4;
     offset_y = req_y / 4;
     len_x = req_x / 4;
     len_y = req_y / 4;
+   
+    in_mem = ufo_buffer_get_host_array(inputs[0], NULL);
 
-    int n;
-    float mean, std;
-    
     n = prepare_test(&test_mem, in_mem, offset_x, offset_y, len_x, len_y, req_x, req_y);
     approx_bg(test_mem, n, &mean, &std);
 
-    for (unsigned i = 0; i < requisition->dims[0] * requisition->dims[1]; i++) 
-    {
-        out_mem[i] = sigmoid(in_mem[i], mean, std, 0.3);
-    }
+    gsize global_work_size = req_x * req_y;
+    cl_mem in_device = ufo_buffer_get_device_array(inputs[0], cmd_queue);
+    cl_mem out_device = ufo_buffer_get_device_array(output, cmd_queue);
+
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 0, sizeof(cl_mem), &out_device));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 1, sizeof(cl_mem), &in_device));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 2, sizeof(float), &mean));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 3, sizeof(float), &std));
+
+    UFO_RESOURCES_CHECK_CLERR (clEnqueueNDRangeKernel (cmd_queue,
+                                                       priv->sigmoid_kernel,
+                                                       1, NULL, &global_work_size, NULL,
+                                                       0, NULL, NULL));
 
     g_free(test_mem);
 
@@ -237,10 +265,22 @@ ufo_piv_contrast_task_set_property (GObject *object,
                               GParamSpec *pspec)
 {
     UfoPivContrastTaskPrivate *priv = UFO_PIV_CONTRAST_TASK_GET_PRIVATE (object);
-    (void) priv;
 
     switch (property_id) {
-        case PROP_TEST:
+        case PROP_GAMMA:
+            priv->gamma = g_value_get_float(value);
+            break;
+        case PROP_C1:
+            priv->c1 = g_value_get_float(value);
+            break;
+        case PROP_C2:
+            priv->c2 = g_value_get_float(value);
+            break;
+        case PROP_C3:
+            priv->c3 = g_value_get_float(value);
+            break;
+        case PROP_C4:
+            priv->c4 = g_value_get_float(value);
             break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -255,10 +295,22 @@ ufo_piv_contrast_task_get_property (GObject *object,
                               GParamSpec *pspec)
 {
     UfoPivContrastTaskPrivate *priv = UFO_PIV_CONTRAST_TASK_GET_PRIVATE (object);
-    (void) priv;
 
     switch (property_id) {
-        case PROP_TEST:
+        case PROP_GAMMA:
+            g_value_set_float (value, priv->gamma);
+            break;
+        case PROP_C1:
+            g_value_set_float (value, priv->c1);
+            break;
+        case PROP_C2:
+            g_value_set_float (value, priv->c2);
+            break;
+        case PROP_C3:
+            g_value_set_float (value, priv->c3);
+            break;
+        case PROP_C4:
+            g_value_set_float (value, priv->c4);
             break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -269,6 +321,13 @@ ufo_piv_contrast_task_get_property (GObject *object,
 static void
 ufo_piv_contrast_task_finalize (GObject *object)
 {
+    UfoPivContrastTaskPrivate *priv = UFO_PIV_CONTRAST_TASK_GET_PRIVATE (object);
+    
+    if (priv->sigmoid_kernel) {
+        UFO_RESOURCES_CHECK_CLERR (clReleaseKernel (priv->sigmoid_kernel));
+        priv->sigmoid_kernel = NULL;
+    }
+
     G_OBJECT_CLASS (ufo_piv_contrast_task_parent_class)->finalize (object);
 }
 
@@ -292,12 +351,40 @@ ufo_piv_contrast_task_class_init (UfoPivContrastTaskClass *klass)
     oclass->get_property = ufo_piv_contrast_task_get_property;
     oclass->finalize = ufo_piv_contrast_task_finalize;
 
-    properties[PROP_TEST] =
-        g_param_spec_string ("test",
-            "Test property nick",
-            "Test property description blurb",
-            "",
-            G_PARAM_READWRITE);
+    properties[PROP_C1] = g_param_spec_float(
+                            "c1",
+                            "lower cut",
+                            "lower cut relative to the background mean in unit of background standard deviation",
+                            -5.0f, 5.0f, -0.5f,
+                            G_PARAM_READWRITE);
+
+     properties[PROP_C2] = g_param_spec_float(
+                            "c2",
+                            "higher cut",
+                            "higher cut relative to the background mean in unit of background standard deviation",
+                            0.0f, 100.0f, 10.0f,
+                            G_PARAM_READWRITE);
+
+      properties[PROP_C3] = g_param_spec_float(
+                            "c3",
+                            "sigmoid shift",
+                            "sigmoid shift relative to the background mean in unit of background standard deviation",
+                            0.0f, 20.0f, 3.0f,
+                            G_PARAM_READWRITE);
+ 
+      properties[PROP_C4] = g_param_spec_float(
+                            "c4",
+                            "sigmoid width",
+                            "sigmoid shift in unit of background standard deviation",
+                            0.0f, 10.0f, 1.5f,
+                            G_PARAM_READWRITE);
+
+      properties[PROP_GAMMA] = g_param_spec_float(
+                            "gamma",
+                            "intensity gamma",
+                            "intensity gamma",
+                            0.0f, 1.0f, 0.3f,
+                            G_PARAM_READWRITE);
 
     for (guint i = PROP_0 + 1; i < N_PROPERTIES; i++)
         g_object_class_install_property (oclass, i, properties[i]);
@@ -309,4 +396,9 @@ static void
 ufo_piv_contrast_task_init(UfoPivContrastTask *self)
 {
     self->priv = UFO_PIV_CONTRAST_TASK_GET_PRIVATE(self);
+    self->priv->c1 = -0.5f;
+    self->priv->c2 = 10.0f;
+    self->priv->c3 = 4.0f;
+    self->priv->c4 = 2.0f;
+    self->priv->gamma = 0.3f;
 }
