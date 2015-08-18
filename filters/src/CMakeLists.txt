@@ -3,7 +3,6 @@ cmake_minimum_required(VERSION 2.6)
 #{{{ Sources
 
 set(ufofilter_SRCS
-    ufo-cut-roi-task.c
     ufo-fftconvolution-task.c
     ufo-hessian-kernel-task.c
     ufo-hessian-analysis-task.c
