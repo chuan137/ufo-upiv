@@ -231,6 +231,19 @@ ufo_hessian_analysis_task_get_property (GObject *object,
 static void
 ufo_hessian_analysis_task_finalize (GObject *object)
 {
+
+    UfoHessianAnalysisTaskPrivate *priv = UFO_HESSIAN_ANALYSIS_TASK_GET_PRIVATE (object);
+
+    if (priv->kernel_det) {
+        UFO_RESOURCES_CHECK_CLERR (clReleaseKernel (priv->kernel_det));
+        priv->kernel_det = NULL;
+    }
+
+    if (priv->kernel_eigval) {
+        UFO_RESOURCES_CHECK_CLERR (clReleaseKernel (priv->kernel_eigval));
+        priv->kernel_eigval = NULL;
+    }
+
     G_OBJECT_CLASS (ufo_hessian_analysis_task_parent_class)->finalize (object);
 }
 
