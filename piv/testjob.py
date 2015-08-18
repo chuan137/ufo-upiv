@@ -3,6 +3,7 @@ from ufojob import UfoJob
 from ddict import DotDict
 import argparse
 import sys, os
+from inspect import stack
 
 realdir = os.path.split(os.path.realpath(__file__))[0]
 
@@ -13,7 +14,11 @@ class TestJob(UfoJob):
             inpath = os.path.join(realdir, '../data/sampleB'),
             outfile = os.path.join(realdir, '../data/res.tif'))
 
-    def __init__(self, filtername, parms={}):
+    def __init__(self, filtername, parms={}, **kargs):
+        if 'outfile' in kargs:
+            callerpath = os.path.dirname(stack()[-1][1])
+            kargs['outfile'] = os.path.relpath(os.path.join(callerpath, kargs['outfile']))
+        parms.update(kargs)
         super(TestJob, self).__init__(parms)
 
         self.filter = filtername
