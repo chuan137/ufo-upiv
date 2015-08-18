@@ -13,7 +13,7 @@ test.py
 tools/
 tmp*
 _tmp*
-log
+*log
 data/
 
 filters/src/ufo-ring-coordinates.h
