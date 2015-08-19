@@ -104,7 +104,7 @@ class PivJob(PivJob):
 
 
 
-in_path     = 'data/input/sampleB-substack'
+in_path     = 'data/sampleB'
 number      = 10
 
 parms = DotDict(dict( # parameters for small rings

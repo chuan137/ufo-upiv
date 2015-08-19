@@ -1,34 +1,34 @@
 from gi.repository import Ufo
-from .ufo_extension import PluginManager, TaskGraph
-from .ufojob import UfoJob
-from .ddict import DotDict
+from ufo_extension import PluginManager, TaskGraph
+from ufojob import UfoJob
+from ddict import DotDict
 
 class PivJob(UfoJob):
-    _default_parms = dict(
-        in_path     = './data/input/input-stack.tif',
-        out_file    = './data/res.tif',
-        device      = 'GPU',    # GPU/CPU
-        profiling   = False,    # True/False
-        sched       = 'Fixed',
-        number      = 1,        # input image
-        start       = 0,        # first image
-        scale       = 2,        # downsize scale
-        ring_start  = 6,        # ring sizes
-        ring_end    = 40,
-        ring_step   = 2,
-        ring_thickness = 6,
-        xshift      = 0,
-        yshift      = 0,
-        maxima_sigma = 3.0, 
-        blob_alpha  = 1.0 )
-
     def __init__(self, parms={}):
-        super(PivJob, self).__init__(parms)
+        default = dict(
+            in_path     = './data/input/input-stack.tif',
+            out_file    = './data/res.tif',
+            schedfixed  = True,
+            number      = 1,        # input image
+            start       = 0,        # first image
+            scale       = 2,        # downsize scale
+            ring_start  = 6,        # ring sizes
+            ring_end    = 40,
+            ring_step   = 2,
+            ring_thickness = 6,
+            xshift      = 0,
+            yshift      = 0,
+            maxima_sigma = 3.0, 
+            blob_alpha  = 1.0 )
+
+        default.update(parms)
+        super(PivJob, self).__init__(default)
+
         self.parms.ring_number = \
             (self.parms.ring_end - self.parms.ring_start) / self.parms.ring_step + 1
         self.setup_tasks()
 
-    def sestup_tasks(self):
+    def setup_tasks(self):
         p  = self.parms
         sc = self.parms.scale
 

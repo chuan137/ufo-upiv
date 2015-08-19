@@ -8,18 +8,19 @@ from inspect import stack
 realdir = os.path.split(os.path.realpath(__file__))[0]
 
 class TestJob(UfoJob):
-    _default_parms = dict (
-            sched = 'Fixed',
-            profiling = False,
-            inpath = os.path.join(realdir, '../data/sampleB'),
-            outfile = os.path.join(realdir, '../data/res.tif'))
-
     def __init__(self, filtername, parms={}, **kargs):
+        default = dict (
+                schedfixed = True,
+                profiling = False,
+                inpath = os.path.join(realdir, '../data/sampleB'),
+                outfile = os.path.join(realdir, '../data/res.tif'))
+        default.update(parms)
+
         if 'outfile' in kargs:
             callerpath = os.path.dirname(stack()[-1][1])
             kargs['outfile'] = os.path.relpath(os.path.join(callerpath, kargs['outfile']))
-        parms.update(kargs)
-        super(TestJob, self).__init__(parms)
+        default.update(kargs)
+        super(TestJob, self).__init__(default)
 
         self.filter = filtername
         self.parser = argparse.ArgumentParser()

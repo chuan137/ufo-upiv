@@ -8,9 +8,8 @@ import json
 class UfoJob(object):
     _default_parms = dict(
             profiling = False,
-            device = 'GPU',
-            sched = 'Normal'
-            )
+            schedfixed = False,
+            device = 'GPU' )
 
     def __init__(self, parms={}):
         self.parms = DotDict(self._default_parms)
@@ -52,14 +51,16 @@ class UfoJob(object):
         return t
 
     def init_scheduler(self, type):
-        if type is 'Fixed':
+        if type is True:
+            print 'fixed'
             self.sched = Ufo.FixedScheduler()
         else:
+            print 'not fixed'
             self.sched = Ufo.Scheduler()
 
     def setup_scheduler(self):
         if self.sched is None:
-            self.init_scheduler(self.parms.sched)
+            self.init_scheduler(self.parms.schedfixed)
         self.sched.props.enable_tracing = self.parms.profiling # profiling
         if self.parms.get('device') is 'CPU':
             print 'run on cpu'
