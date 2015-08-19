@@ -17,20 +17,18 @@
  * License along with this library.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "ufo-piv-contrast-task.h"
-
-#include <stdio.h>
-#include <math.h>
-
 #ifdef __APPLE__
 #include <OpenCL/cl.h>
 #else
 #include <CL/cl.h>
 #endif
+#include <math.h>
 
+#include "ufo-piv-contrast-task.h"
 
 struct _UfoPivContrastTaskPrivate {
     cl_kernel sigmoid_kernel;
+    cl_context context;
     gfloat c1;
     gfloat c2;
     gfloat c3;
@@ -73,6 +71,11 @@ ufo_piv_contrast_task_setup (UfoTask *task,
 
     priv = UFO_PIV_CONTRAST_TASK_GET_PRIVATE (task);
     priv->sigmoid_kernel = ufo_resources_get_kernel (resources, "piv_contrast.cl", "sigmoid", error);
+    priv->context = ufo_resources_get_context (resources);
+
+    UFO_RESOURCES_CHECK_CLERR (clRetainContext (priv->context));
+    if (priv->sigmoid_kernel != NULL)
+        UFO_RESOURCES_CHECK_CLERR (clRetainKernel (priv->sigmoid_kernel));
 }
 
 static void
@@ -80,16 +83,7 @@ ufo_piv_contrast_task_get_requisition (UfoTask *task,
                                  UfoBuffer **inputs,
                                  UfoRequisition *requisition)
 {
-    UfoPivContrastTaskPrivate *priv;
-
-    priv = UFO_PIV_CONTRAST_TASK_GET_PRIVATE (task);
     ufo_buffer_get_requisition(inputs[0], requisition);
-
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 4, sizeof(gfloat), &priv->gamma));
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 5, sizeof(gfloat), &priv->c1));
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 6, sizeof(gfloat), &priv->c2));
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 7, sizeof(gfloat), &priv->c3));
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 8, sizeof(gfloat), &priv->c4));
 }
 
 static guint
@@ -157,18 +151,17 @@ static float array_std(float *data, int size, float mean, float low, float high)
     return sqrt(res/ct);
 }
 
-static int prepare_test(gfloat** test, gfloat* input, int offset_x, int offset_y, 
+static int prepare_test(gfloat* test, gfloat* input, int offset_x, int offset_y, 
                          int len_x, int len_y, int req_x, int req_y)
 {
     int id, id_0;
     len_x= (len_x + offset_x) > req_x ? req_x - offset_x : len_x;
     len_y = (len_y + offset_y) > req_y ? req_y - offset_y : len_y;
-    *test = (gfloat*) g_malloc0 (len_x * len_y * sizeof(gfloat) );
     for (int i = 0; i < len_x; i++) {
         for (int j = 0; j < len_y; j++) {
             id = i * len_x + j;
             id_0 = (i+offset_x) * req_x + (j+offset_y);
-            (*test)[id] = input[id_0];
+            test[id] = input[id_0];
         }
     }
     return len_x*len_y;
@@ -216,17 +209,16 @@ ufo_piv_contrast_task_process (UfoTask *task,
 {
     UfoPivContrastTaskPrivate *priv;
     UfoGpuNode *node;
-    cl_command_queue cmd_queue;
+    UfoProfiler *profiler;
+    cl_command_queue *cmd_queue;
+    cl_mem in_device;
+    cl_mem out_device;
     
     unsigned offset_x, offset_y, len_x, len_y, req_x, req_y;
     gfloat *in_mem, *test_mem;
-    float mean, std;
+    gfloat mean, std;
     int n;
  
-    priv = UFO_PIV_CONTRAST_TASK_GET_PRIVATE (task);
-    node = UFO_GPU_NODE (ufo_task_node_get_proc_node (UFO_TASK_NODE (task)));
-    cmd_queue = ufo_gpu_node_get_cmd_queue (node);
-
     req_x = requisition->dims[0];
     req_y = requisition->dims[1];
     offset_x = req_x / 4;
@@ -235,25 +227,32 @@ ufo_piv_contrast_task_process (UfoTask *task,
     len_y = req_y / 4;
    
     in_mem = ufo_buffer_get_host_array(inputs[0], NULL);
+    test_mem = (gfloat*) g_malloc0 (len_x * len_y * sizeof(gfloat));
 
-    n = prepare_test(&test_mem, in_mem, offset_x, offset_y, len_x, len_y, req_x, req_y);
+    n = prepare_test(test_mem, in_mem, offset_x, offset_y, len_x, len_y, req_x, req_y);
     approx_bg(test_mem, n, &mean, &std);
-
-    gsize global_work_size = req_x * req_y;
-    cl_mem in_device = ufo_buffer_get_device_array(inputs[0], cmd_queue);
-    cl_mem out_device = ufo_buffer_get_device_array(output, cmd_queue);
-
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 0, sizeof(cl_mem), &out_device));
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 1, sizeof(cl_mem), &in_device));
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 2, sizeof(float), &mean));
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 3, sizeof(float), &std));
-
-    UFO_RESOURCES_CHECK_CLERR (clEnqueueNDRangeKernel (cmd_queue,
-                                                       priv->sigmoid_kernel,
-                                                       1, NULL, &global_work_size, NULL,
-                                                       0, NULL, NULL));
-
     g_free(test_mem);
+
+    priv = UFO_PIV_CONTRAST_TASK_GET_PRIVATE (task);
+    node = UFO_GPU_NODE (ufo_task_node_get_proc_node (UFO_TASK_NODE (task)));
+    cmd_queue = ufo_gpu_node_get_cmd_queue (node);
+    in_device = ufo_buffer_get_device_array(inputs[0], cmd_queue);
+    out_device = ufo_buffer_get_device_array(output, cmd_queue);
+
+    gsize global_work_size = requisition->dims[0] * requisition->dims[1];
+
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 0, sizeof (cl_mem), &out_device));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 1, sizeof (cl_mem), &in_device));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 2, sizeof (gfloat), &mean));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 3, sizeof (gfloat), &std));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 4, sizeof (gfloat), &priv->gamma));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 5, sizeof (gfloat), &priv->c1));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 6, sizeof (gfloat), &priv->c2));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 7, sizeof (gfloat), &priv->c3));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 8, sizeof (gfloat), &priv->c4));
+
+    profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
+    ufo_profiler_call (profiler, cmd_queue, priv->sigmoid_kernel, 1, &global_work_size, NULL);
 
     return TRUE;
 }
