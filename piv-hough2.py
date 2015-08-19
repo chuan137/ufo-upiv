@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 from gi.repository import Ufo
-from piv.pivjob import PivJob
-from piv.ddict import DotDict
+from python.pivjob import PivJob
+from python.ddict import DotDict
 import logging
 
 fmt = logging.Formatter('%(name)s %(levelname)s %(message)s')
