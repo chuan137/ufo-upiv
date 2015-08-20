@@ -1,6 +1,5 @@
 .*.json
-filters/build
-filters/.build
+*json
 *.so
 *.o
 *.pyc
