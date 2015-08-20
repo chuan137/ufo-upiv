@@ -2,13 +2,17 @@ from gi.repository import Ufo
 from ufo_extension import PluginManager, TaskGraph
 from ufojob import UfoJob
 from ddict import DotDict
+from utils import LogMixin
+import os
+
 
 class PivJob(UfoJob):
     def __init__(self, parms={}):
-        default = dict(
+        super(PivJob, self).__init__(profiling=False, schedfixed=True, deviceCPU=False)
+
+        self.parms = DotDict( dict(
             in_path     = './data/input/input-stack.tif',
             out_file    = './data/res.tif',
-            schedfixed  = True,
             number      = 1,        # input image
             start       = 0,        # first image
             scale       = 2,        # downsize scale
@@ -19,16 +23,15 @@ class PivJob(UfoJob):
             xshift      = 0,
             yshift      = 0,
             maxima_sigma = 3.0, 
-            blob_alpha  = 1.0 )
-
-        default.update(parms)
-        super(PivJob, self).__init__(default)
+            blob_alpha  = 1.0 ))
+        self.parms.update(parms)
 
         self.parms.ring_number = \
             (self.parms.ring_end - self.parms.ring_start) / self.parms.ring_step + 1
-        self.setup_tasks()
 
-    def setup_tasks(self):
+        self.setup_basic_tasks()
+
+    def setup_basic_tasks(self):
         p  = self.parms
         sc = self.parms.scale
 
@@ -83,21 +86,62 @@ class PivJob(UfoJob):
         self.add_task('m7', 'monitor')
         self.add_task('null')
 
-    def setup_graph(self):
+    def setup_tasks(self):
         pass
 
+    def setup_graph(self, flag):
+        if flag == 1:
+            b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'input_fft')#, 'm1')
+            b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')#, 'm2')
+            b3 = self.branch('ring_convolution', 'ifft', 'write')
+            self.graph.merge_branch(b1, b2, b3)
+        elif flag == 2:
+            b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'input_fft')
+            b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')
+            b3 = self.branch('ring_convolution', 'ring_slice')
+            self.graph.merge_branch(b1, b2, b3)
 
+            b4 = self.branch('hessian_kernel', 'hessian_fft', 'hessian_loop')
+            b5 = self.branch('hessian_convolution', 'ifft', 'hessian_analysis', 'write')
+            self.graph.merge_branch(b3, b4, b5)
+        else:
+            b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'input_fft')
+            b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')
+            b3 = self.branch('ring_convolution', 'ring_slice')
+            self.graph.merge_branch(b1, b2, b3)
 
-    # def setup_graph(self):
-        # b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'brightness')
-        # b2 = self.branch('ring_pattern', 'ring_pattern_loop')
-        # b3 = self.branch('hessian_kernel', 'hessian_kernel_loop')
-        # b4 = self.branch('hessian_convolve', 'hessian_analysis', 'bc_hessian', 'stack1', 'unstack1')
-        # b5 = self.branch('bc_hessian', 'local_maxima', 'label_cluster', 'stack2', 'combine_test', 'unstack2')
-        # b6 = self.branch('blob_test', 'stack3', 'sum', 'write')
-        # hough = self.tasks.hough_convolve
-        # self.graph.merge_branch(b1, b2, hough)
-        # self.graph.merge_branch(hough, b3, b4)
-        # self.graph.merge_branch(b4, b5, b6)
+            b4 = self.branch('hessian_kernel', 'hessian_fft', 'hessian_loop')
+            b5 = self.branch('hessian_convolution', 'ifft', 'hessian_analysis', 
+                             'hessian_broadcast', 'stack1', 'unstack1')
+            self.graph.merge_branch(b3, b4, b5)
 
+            b6 = self.branch('hessian_broadcast', 'local_maxima', 'label_cluster', 
+                             'stack2', 'combine_test', 'unstack2')
+            b7 = self.branch('blob_test', 'stack3', 'sum', 'write')
+            self.graph.merge_branch(b5, b6, b7)
 
+    def run(self, flag=None):
+        self.setup_tasks()
+        self.setup_graph(flag)
+        self.log_tasks()
+        runtime = self.run_t()
+        self.logger.info('')
+        self.logger.info('Program finished in %s seconds' % runtime )
+
+    def log_tasks(self):
+        scale = self.tasks.rescale.props.factor
+        fmt_f = "%16s.%-16s= %8.3f"
+        fmt_i = "%16s.%-16s= %8i"
+        self.logger.info( 'input:  ' + self.tasks.read.props.path)
+        self.logger.info( 'output: ' + self.tasks.write.props.filename)
+        self.logger.info( '')
+        self.logger.info( fmt_i % ('Ring', 'start', self.tasks.ring_pattern.props.ring_start/scale))
+        self.logger.info( fmt_i % ('Ring', 'end', self.tasks.ring_pattern.props.ring_end/scale))
+        self.logger.info( fmt_i % ('Ring', 'step', self.tasks.ring_pattern.props.ring_step/scale))
+        self.logger.info( fmt_f % ('Contrast', 'low_cut', self.tasks.contrast.props.c1))
+        self.logger.info( fmt_f % ('Contrast', 'high_cut', self.tasks.contrast.props.c2))
+        self.logger.info( fmt_f % ('Contrast', 'shift', self.tasks.contrast.props.c3))
+        self.logger.info( fmt_f % ('Contrast', 'width', self.tasks.contrast.props.c4))
+        self.logger.info( fmt_f % ('Contrast', 'gamma', self.tasks.contrast.props.gamma))
+        self.logger.info( fmt_f % ('LocalMax', 'threshold', self.tasks.local_maxima.props.sigma))
+        self.logger.info( fmt_f % ('BlobTest', 'alpha', self.tasks.blob_test.props.alpha))

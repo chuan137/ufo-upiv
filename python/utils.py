@@ -1,29 +1,16 @@
-import sys, getopt
+import sys
+import os
+import logging
+import inspect
 
-def parse_args():
-    argv = sys.argv[1:]
-    result = dict()
+class LogMixin(object):
+    @property
+    def logger(self):
+        name = '.'.join([__name__, self.__class__.__name__])
+        return logging.getLogger(name)
 
-    def print_helper():
-        print 'test.py -i <inputfile> -o <outputfile>'
-        sys.exit()
-
-    try:
-        opts, args = getopt.getopt(argv, "hi:o:", ["input=", "output="])
-        print opts
-        print args
-    except getopt.GetoptError:
-        print_helper()
-
-    for opt, arg in opts:
-        if opt == '-h':
-            print_helper()
-        elif opt in ("-i", "--input"):
-            result['in_path'] = arg
-        elif opt in ("-o", "--output"):
-            result['out_file'] = arg
-        else:
-            result[opt] = arg
-
-    return result
+def relpath(path):
+    filename = inspect.getfile(sys._getframe(1))
+    realdir = os.path.split(os.path.realpath(filename))[0]
+    return os.path.relpath(os.path.join(realdir, path))
 

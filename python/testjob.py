@@ -4,70 +4,58 @@ from ddict import DotDict
 import argparse
 import sys, os
 from inspect import stack
+from utils import relpath, LogMixin
 
-realdir = os.path.split(os.path.realpath(__file__))[0]
+default_inpath  = relpath('../data/sampleB')
+default_outfile = relpath('../data/res.tif')
 
-class TestJob(UfoJob):
-    def __init__(self, filtername, parms={}, **kargs):
-        default = dict (
-                schedfixed = True,
-                profiling = False,
-                inpath = os.path.join(realdir, '../data/sampleB'),
-                outfile = os.path.join(realdir, '../data/res.tif'))
-        default.update(parms)
+class TestJob(UfoJob, LogMixin):
+    inpath = default_inpath
+    outfile = default_outfile
 
-        if 'outfile' in kargs:
-            callerpath = os.path.dirname(stack()[-1][1])
-            kargs['outfile'] = os.path.relpath(os.path.join(callerpath, kargs['outfile']))
-        default.update(kargs)
-        super(TestJob, self).__init__(default)
+    def __init__(self, filtername, **parms):
+        super(TestJob, self).__init__(profiling=False, schedfixed=True, deviceCPU=False)
 
         self.filter = filtername
+        self.filter_parms = parms
+
         self.parser = argparse.ArgumentParser()
         self.parser.add_argument('-i', '--inpath')
         self.parser.add_argument('-o', '--outfile')
         self.parser.add_argument('-n', '--number', type=int)
-        self.parser.add_argument('-p', '--profiling', action='store_true', default=False)
+        self.parser.add_argument('-p', '--profiling', action='store_true', default=None)
+        self.parser.add_argument('-c', '--cpu', action='store_true', default=False)
+        self.args, self.extra_args = self.parser.parse_known_args()
+        self.logger.debug(self.args)
+        self.logger.debug("extra arguments: %s" % self.extra_args)
 
     def setup_tasks(self):
-        if self.args.number:
-            self.add_task('read', path=self.args.inpath, number=self.args.number)
-        else:
-            self.add_task('read', path=self.args.inpath)
-        self.add_task('write', filename=self.args.outfile)
-        self.add_task(self.filter, **self.filterargs)
+        self.logger.debug("parameters for filters: %s" % self.filter_parms)
+        self.add_task('read', path=self.inpath, number=self.number)
+        self.add_task('write', filename=self.outfile)
+        self.add_task(self.filter, **self.filter_parms)
 
     def setup_graph(self):
         self.branch('read', self.filter, 'write')
 
-    def parse_args(self):
-        self.args = self.parser.parse_args()
+    def process_args(self):
+        self.inpath = self.args.inpath or self.inpath
+        self.outfile = self.args.outfile or self.outfile
+        self.number = self.args.number or 100
+        self._profiling = self.args.profiling or self._profiling
+        self._deviceCPU = self.args.cpu or self._deviceCPU
 
-        if self.args.inpath is None:
-            self.args.inpath = self.parms.inpath
-        if self.args.outfile is None:
-            self.args.outfile = self.parms.outfile
-
-        self.filterargs = {}
-        for k,v in self.args.__dict__.iteritems():
-            if k not in ['inpath', 'outfile', 'number', 'profiling'] and v is not None:
-                self.filterargs[k] = v
-<<<<<<< HEAD
-        #print self.args
-        #print self.filterargs
-=======
-
-        print self.args
-        print self.filterargs
->>>>>>> 1dd2e4e... TEST ADDED
+        for k,v in vars(self.parser.parse_args(self.extra_args)).iteritems():
+            if k not in ['inpath', 'outfile', 'number', 'profiling', 'cpu'] and v is not None:
+                self.filter_parms[k] = v
 
     def add_argument(self, *argc, **argv):
         self.parser.add_argument(*argc, **argv)
 
     def run(self):
-        self.parse_args()
+        self.process_args()
         self.setup_tasks()
         self.setup_graph()
-        return self.run_t(self.args.profiling)
+        return self.run_t()
 
 
