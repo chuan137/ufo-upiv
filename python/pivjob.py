@@ -5,30 +5,30 @@ from ddict import DotDict
 from utils import LogMixin
 import os
 
+default_parms = dict(
+        in_path     = './data/input/input-stack.tif',
+        out_file    = './data/res.tif',
+        number      = 1,        # input image
+        start       = 0,        # first image
+        scale       = 2,        # downsize scale
+        ring_method = 0,
+        ring_start  = 6,        # ring sizes
+        ring_end    = 40,
+        ring_step   = 2,
+        ring_thickness = 6,
+        xshift      = 0,
+        yshift      = 0,
+        maxima_sigma = 3.0, 
+        blob_alpha  = 1.0 )
 
 class PivJob(UfoJob):
     def __init__(self, parms={}):
         super(PivJob, self).__init__(profiling=False, schedfixed=True, deviceCPU=False)
 
-        self.parms = DotDict( dict(
-            in_path     = './data/input/input-stack.tif',
-            out_file    = './data/res.tif',
-            number      = 1,        # input image
-            start       = 0,        # first image
-            scale       = 2,        # downsize scale
-            ring_start  = 6,        # ring sizes
-            ring_end    = 40,
-            ring_step   = 2,
-            ring_thickness = 6,
-            xshift      = 0,
-            yshift      = 0,
-            maxima_sigma = 3.0, 
-            blob_alpha  = 1.0 ))
+        self.parms = DotDict(default_parms)
         self.parms.update(parms)
-
         self.parms.ring_number = \
             (self.parms.ring_end - self.parms.ring_start) / self.parms.ring_step + 1
-
         self.setup_basic_tasks()
 
     def setup_basic_tasks(self):
@@ -46,8 +46,8 @@ class PivJob(UfoJob):
         self.add_task('ring_convolution', 'complex_mult')
         self.add_task('ring_slice', 'slice')
         self.add_task('ring_pattern', 
-                  ring_start=p.ring_start/sc, ring_end=p.ring_end/sc,
-                  ring_step=p.ring_step/sc, ring_thickness=p.ring_thickness/sc,
+                  start=p.ring_start/sc, end=p.ring_end/sc, step=p.ring_step/sc, 
+                  thickness=p.ring_thickness/sc, method=p.ring_method, 
                   width=1024/sc, height=1024/sc)
 
         self.add_task('hessian_kernel', sigma=2.0/sc, width=1024/sc, height=1024/sc)
@@ -135,9 +135,9 @@ class PivJob(UfoJob):
         self.logger.info( 'input:  ' + self.tasks.read.props.path)
         self.logger.info( 'output: ' + self.tasks.write.props.filename)
         self.logger.info( '')
-        self.logger.info( fmt_i % ('Ring', 'start', self.tasks.ring_pattern.props.ring_start/scale))
-        self.logger.info( fmt_i % ('Ring', 'end', self.tasks.ring_pattern.props.ring_end/scale))
-        self.logger.info( fmt_i % ('Ring', 'step', self.tasks.ring_pattern.props.ring_step/scale))
+        self.logger.info( fmt_i % ('Ring', 'start', self.tasks.ring_pattern.props.start/scale))
+        self.logger.info( fmt_i % ('Ring', 'end', self.tasks.ring_pattern.props.end/scale))
+        self.logger.info( fmt_i % ('Ring', 'step', self.tasks.ring_pattern.props.step/scale))
         self.logger.info( fmt_f % ('Contrast', 'low_cut', self.tasks.contrast.props.c1))
         self.logger.info( fmt_f % ('Contrast', 'high_cut', self.tasks.contrast.props.c2))
         self.logger.info( fmt_f % ('Contrast', 'shift', self.tasks.contrast.props.c3))

@@ -1,0 +1,23 @@
+parms = dict(
+    in_path     = 'data/sampleB',
+    out_file    = 'data/res.tif',
+    number      = 1,
+    start       = 0,
+    scale       = 1,
+    xshift      = 0,
+    yshift      = 0,
+    width       = 1024,
+    height      = 1024,
+    ring_thick  = 6,
+    ring_start  = 10,
+    ring_end    = 30,
+    ring_step   = 2,
+    ring_method = 0,
+    maxima_sig  = 3.0, 
+    blob_alpha  = 1.0 )
+
+config = dict (
+    graph = 1,
+    schedfixed = True,
+    profiling = False,
+    deviceCPU = False )
