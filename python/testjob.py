@@ -13,11 +13,11 @@ class TestJob(UfoJob, LogMixin):
     inpath = default_inpath
     outfile = default_outfile
 
-    def __init__(self, filtername, **parms):
+    def __init__(self, filtername=None, **parms):
         super(TestJob, self).__init__(profiling=False, schedfixed=True, deviceCPU=False)
 
         self.filter = filtername
-        self.filter_parms = parms
+        self.filter_parms = DotDict(parms)
 
         self.parser = argparse.ArgumentParser()
         self.parser.add_argument('-i', '--inpath')

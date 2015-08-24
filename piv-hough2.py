@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 from python.pivjob import PivJob
 import logging
-logfile = '.houg2.log'
+logfile = '.hough.log'
 logging.basicConfig(level=logging.DEBUG, filename=logfile, filemode='w', 
                     format='%(name)s %(levelname)s %(message)s')
 
@@ -10,7 +10,7 @@ try:
     parms = cf.parms
     config = cf.config
 except:
-    from config import parms
+    from config import parms, config
 
 j = PivJob(parms)
 j.profiling = config.get('profiling') or False
