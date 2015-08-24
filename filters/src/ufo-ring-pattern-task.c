@@ -34,6 +34,7 @@ struct _UfoRingPatternTaskPrivate {
     unsigned ring_step;
     unsigned width;
     unsigned height;
+    enum {GAUSSIAN, STEP, SKEW} method;
 };
 
 static void ufo_task_interface_init (UfoTaskIface *iface);
@@ -52,6 +53,7 @@ enum {
     PROP_RING_THICKNESS,
     PROP_WIDTH,
     PROP_HEIGHT,
+    PROP_METHOD,
     N_PROPERTIES
 };
 
@@ -128,32 +130,51 @@ ufo_ring_pattern_task_generate (UfoTask *task,
     int dimy = (int) priv->height;
     unsigned counter = 0;
     // ring distribution params
-    float width = (float) priv->ring_thickness / 2.0;
+    float thick_h = (float) priv->ring_thickness / 2.0;
     float sig = priv->ring_thickness;
 
     for (int y = -(dimy / 2); y < dimy / 2; ++y) {
         for (int x = -(dimx / 2); x < dimx / 2; ++x) {
-            float dist = sqrt (x * x + y * y) - priv->ring_current;
+            float dist = sqrt(x * x + y * y) - priv->ring_current;
             int sign = dist < 0 ? -1 : 1;
             dist = sign * dist;
-            if (dist <= width) {
-                ++counter;
-                // skew 
-                // out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] = sign;
-                // step
-                // out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] = 1;
-                // gaussian
-                out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] = exp(-dist*dist/(2.0*sig*sig));
+            switch (priv->method) {
+                case GAUSSIAN:
+                    if (dist <= thick_h) 
+                    {
+                        ++counter;
+                        out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] 
+                            = exp(-dist*dist/(2.0*sig*sig));
+                    } 
+                    else if (dist <= 2.0 * thick_h) 
+                        out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] 
+                            = - exp(-dist*dist/(2.0*sig*sig));
+                    else
+                        out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] = 0;
+                    break;
+                case STEP:
+                    if (dist <= thick_h) 
+                    {
+                        ++counter;
+                        out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] = 1;
+                    } else
+                        out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] = 0;
+                    break;
+                case SKEW:
+                    if (dist <= thick_h) 
+                    {
+                        ++counter;
+                        out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] = sign;
+                    } else
+                        out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] = 0;
+                    break;
+                default:
+                    break;
             }
-            else if (dist <= 1.5 * width) {
-                out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] = -1.0;
-            }
-            else
-                out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] = 0;
         }
     }
 
-    add_ring_metadata(output, counter, priv->ring_current);
+    add_ring_metadata(output, 0, priv->ring_current);
 
     for (int y = -(dimy / 2); y < dimy / 2; ++y) {
         for (int x = -(dimx / 2); x < dimx / 2; ++x) {
@@ -194,6 +215,9 @@ ufo_ring_pattern_task_set_property (GObject *object,
         case PROP_HEIGHT:
             priv->height = ceil_power_of_two (g_value_get_uint (value));
             break;
+        case PROP_METHOD:
+            priv->method = g_value_get_uint(value);
+            break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
             break;
@@ -226,6 +250,9 @@ ufo_ring_pattern_task_get_property (GObject *object,
             break;
         case PROP_HEIGHT:
             g_value_set_uint (value, priv->height);
+            break;
+        case PROP_METHOD:
+            g_value_set_uint (value, priv->method);
             break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -260,28 +287,28 @@ ufo_ring_pattern_task_class_init (UfoRingPatternTaskClass *klass)
     gobject_class->finalize = ufo_ring_pattern_task_finalize;
 
     properties[PROP_RING_START] =
-        g_param_spec_uint ("ring_start",
+        g_param_spec_uint ("start",
                            "give starting radius size",
                            "give starting radius size",
                            1, G_MAXUINT, 5,
                            G_PARAM_READWRITE);
 
     properties[PROP_RING_STEP] =
-        g_param_spec_uint ("ring_step",
+        g_param_spec_uint ("step",
                            "Gives ring step",
                            "Gives ring step",
                            1, G_MAXUINT, 2,
                            G_PARAM_READWRITE);
 
     properties[PROP_RING_END] =
-        g_param_spec_uint ("ring_end",
+        g_param_spec_uint ("end",
                            "give ending radius size",
                            "give ending radius size",
                            1, G_MAXUINT, 5,
                            G_PARAM_READWRITE);
 
     properties[PROP_RING_THICKNESS] =
-        g_param_spec_uint ("ring_thickness",
+        g_param_spec_uint ("thickness",
                            "give desired ring thickness",
                            "give desired ring thickness",
                            1, G_MAXUINT, 13,
@@ -301,6 +328,13 @@ ufo_ring_pattern_task_class_init (UfoRingPatternTaskClass *klass)
                            1, G_MAXUINT, 1024,
                            G_PARAM_READWRITE);
 
+    properties[PROP_METHOD] = 
+        g_param_spec_uint ("method",
+                           "Method of generating ring boundary",
+                           "Method of generating ring boundary",
+                           0, 2, 0,
+                           G_PARAM_READWRITE);
+
     for (guint i = PROP_0 + 1; i < N_PROPERTIES; i++)
         g_object_class_install_property (gobject_class, i, properties[i]);
 
@@ -318,4 +352,5 @@ ufo_ring_pattern_task_init(UfoRingPatternTask *self)
     self->priv->width = 1024;
     self->priv->height = 1024;
     self->priv->ring_step = 2;
+    self->priv->method = 0;
 }
