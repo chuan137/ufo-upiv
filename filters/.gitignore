@@ -1,2 +1,13 @@
 .build
 build
+src/ufo-ring-coordinates.h
+src/ufo-ringwriter-task.c
+src/ufo-ringwriter-task.h
+src/ufo-test-filter-task.c
+src/ufo-test-filter-task.c.new
+src/ufo-test-filter-task.c_bckp_writestoimage
+src/ufo-test-filter-task.h
+src/ufo-combine-test-task.bak.c
+src/ufo-combine-test-task.new.c
+src/ufo-contrast-task.c
+
