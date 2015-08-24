@@ -165,6 +165,7 @@ ufo_bilateral_task_set_property (GObject *object,
                               GParamSpec *pspec)
 {
     UfoBilateralTaskPrivate *priv = UFO_BILATERAL_TASK_GET_PRIVATE (object);
+    (void) *priv;
 
     switch (property_id) {
         case PROP_TEST:
@@ -182,6 +183,7 @@ ufo_bilateral_task_get_property (GObject *object,
                               GParamSpec *pspec)
 {
     UfoBilateralTaskPrivate *priv = UFO_BILATERAL_TASK_GET_PRIVATE (object);
+    (void) *priv;
 
     switch (property_id) {
         case PROP_TEST:
