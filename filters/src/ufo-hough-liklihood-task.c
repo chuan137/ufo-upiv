@@ -29,6 +29,8 @@
 struct _UfoHoughLiklihoodTaskPrivate {
     gint masksize;
     gfloat maskinnersize;
+
+    cl_context context;
     cl_kernel kernel;
     cl_mem mask_mem;
 };
@@ -62,15 +64,22 @@ ufo_hough_liklihood_task_setup (UfoTask *task,
                        GError **error)
 {
     UfoHoughLiklihoodTaskPrivate *priv;
+    cl_int err;
     int i, j, i0, j0;
     int *mask;
+    int masksize_h;
+    float maskinnersize_h;
 
     priv = UFO_HOUGH_LIKLIHOOD_TASK_GET_PRIVATE (task);
+    priv->context = ufo_resources_get_context (resources);
+    priv->kernel = ufo_resources_get_kernel (resources, "hough.cl", "likelihood", error);
 
     mask = g_malloc0 (priv->masksize * priv->masksize * sizeof (int));
-    for (i = 0, i0 = - (priv->masksize - 1) / 2; i < priv->masksize; i++, i0++)
-        for (j = 0, j0 = - (priv->masksize - 1) / 2; j < priv->masksize; j++, j0++)
-            if ((i0*i0 + j0*j0) >= priv->maskinnersize * priv->maskinnersize)
+    masksize_h = (priv->masksize - 1) / 2;
+    maskinnersize_h = priv->maskinnersize / 2;
+    for (i = 0, i0 = - masksize_h; i < priv->masksize; i++, i0++)
+        for (j = 0, j0 = - masksize_h; j < priv->masksize; j++, j0++)
+            if ((i0*i0 + j0*j0) >= maskinnersize_h * maskinnersize_h)
                 mask[i + j*priv->masksize] = 1;
 
     // debug mask
@@ -81,6 +90,13 @@ ufo_hough_liklihood_task_setup (UfoTask *task,
             g_printf ("%d, ", *mask0);
         g_printf("\n");
     }
+
+    if (priv->mask_mem)
+        UFO_RESOURCES_CHECK_CLERR (clReleaseMemObject (priv->mask_mem));
+    
+    priv->mask_mem = clCreateBuffer (priv->context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,
+            priv->masksize * priv->masksize * sizeof (*mask), mask, &err);
+    UFO_RESOURCES_CHECK_CLERR (err);
 }
 
 static void
@@ -107,7 +123,7 @@ ufo_hough_liklihood_task_get_num_dimensions (UfoTask *task,
 static UfoTaskMode
 ufo_hough_liklihood_task_get_mode (UfoTask *task)
 {
-    return UFO_TASK_MODE_PROCESSOR;
+    return UFO_TASK_MODE_PROCESSOR | UFO_TASK_MODE_GPU;
 }
 
 static gboolean
@@ -116,7 +132,27 @@ ufo_hough_liklihood_task_process (UfoTask *task,
                          UfoBuffer *output,
                          UfoRequisition *requisition)
 {
-    ufo_buffer_copy(inputs[0], output);
+    UfoHoughLiklihoodTaskPrivate *priv;
+    UfoGpuNode *node;
+    UfoProfiler *profiler;
+    cl_command_queue cmd_queue;
+    cl_mem in_image;
+    cl_mem out_mem;
+
+    priv = UFO_HOUGH_LIKLIHOOD_TASK_GET_PRIVATE (task);
+    node = UFO_GPU_NODE (ufo_task_node_get_proc_node (UFO_TASK_NODE (task)));
+    profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
+    cmd_queue = ufo_gpu_node_get_cmd_queue (node);
+    in_image = ufo_buffer_get_device_image (inputs[0], cmd_queue);
+    out_mem = ufo_buffer_get_device_array (output, cmd_queue);
+
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 0, sizeof (cl_mem), &out_mem));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 1, sizeof (cl_mem), &in_image));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 2, sizeof (cl_mem), &priv->mask_mem));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 3, sizeof (int), &priv->masksize));
+
+    ufo_profiler_call (profiler, cmd_queue, priv->kernel, 2, requisition->dims, NULL);
+
     return TRUE;
 }
 
@@ -198,7 +234,7 @@ ufo_hough_liklihood_task_class_init (UfoHoughLiklihoodTaskClass *klass)
         g_param_spec_int ("masksize",
             "Mask size",
             "Mask size",
-            3, 21, 9,
+            3, 15, 9,
             G_PARAM_READWRITE);
 
     properties[PROP_MASKINNERSIZE] =
@@ -219,5 +255,5 @@ ufo_hough_liklihood_task_init(UfoHoughLiklihoodTask *self)
 {
     self->priv = UFO_HOUGH_LIKLIHOOD_TASK_GET_PRIVATE(self);
     self->priv->masksize = 9;
-    self->priv->maskinnersize = 1.0;
+    self->priv->maskinnersize = 2.0;
 }
