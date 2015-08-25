@@ -19,6 +19,7 @@ set(ufofilter_SRCS
     ufo-complex-mult-task.c
     ufo-bilateral-task.c
     ufo-piv-contrast-task.c
+    ufo-hough-liklihood-task.c
     )
 
 #}}}
