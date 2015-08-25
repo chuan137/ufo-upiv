@@ -27,7 +27,9 @@
 #include <glib/gprintf.h>
 
 struct _UfoHoughLiklihoodTaskPrivate {
+    gint numones;
     gint masksize;
+    gint masksize_h;
     gfloat maskinnersize;
 
     cl_context context;
@@ -67,7 +69,6 @@ ufo_hough_liklihood_task_setup (UfoTask *task,
     cl_int err;
     int i, j, i0, j0;
     int *mask;
-    int masksize_h;
     float maskinnersize_h;
 
     priv = UFO_HOUGH_LIKLIHOOD_TASK_GET_PRIVATE (task);
@@ -75,12 +76,16 @@ ufo_hough_liklihood_task_setup (UfoTask *task,
     priv->kernel = ufo_resources_get_kernel (resources, "hough.cl", "likelihood", error);
 
     mask = g_malloc0 (priv->masksize * priv->masksize * sizeof (int));
-    masksize_h = (priv->masksize - 1) / 2;
+    priv->masksize_h = (priv->masksize - 1) / 2;
     maskinnersize_h = priv->maskinnersize / 2;
-    for (i = 0, i0 = - masksize_h; i < priv->masksize; i++, i0++)
-        for (j = 0, j0 = - masksize_h; j < priv->masksize; j++, j0++)
+    priv->numones = 0;
+    for (i = 0, i0 = - priv->masksize_h; i < priv->masksize; i++, i0++)
+        for (j = 0, j0 = - priv->masksize_h; j < priv->masksize; j++, j0++)
             if ((i0*i0 + j0*j0) >= maskinnersize_h * maskinnersize_h)
+            {
                 mask[i + j*priv->masksize] = 1;
+                priv->numones += 1;
+            }
 
     // debug mask
     int *mask0 = mask;
@@ -149,7 +154,7 @@ ufo_hough_liklihood_task_process (UfoTask *task,
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 0, sizeof (cl_mem), &out_mem));
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 1, sizeof (cl_mem), &in_image));
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 2, sizeof (cl_mem), &priv->mask_mem));
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 3, sizeof (int), &priv->masksize));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 3, sizeof (int), &priv->masksize_h));
 
     ufo_profiler_call (profiler, cmd_queue, priv->kernel, 2, requisition->dims, NULL);
 
@@ -234,7 +239,7 @@ ufo_hough_liklihood_task_class_init (UfoHoughLiklihoodTaskClass *klass)
         g_param_spec_int ("masksize",
             "Mask size",
             "Mask size",
-            3, 15, 9,
+            3, 21, 9,
             G_PARAM_READWRITE);
 
     properties[PROP_MASKINNERSIZE] =
