@@ -1,4 +1,4 @@
-maskinnersize = 3.5
+maskinnersize = 7
 1, 1, 1, 1, 1, 1, 1, 1, 1, 
 1, 1, 1, 0, 0, 0, 1, 1, 1, 
 1, 1, 0, 0, 0, 0, 0, 1, 1, 
@@ -10,7 +10,7 @@ maskinnersize = 3.5
 1, 1, 1, 1, 1, 1, 1, 1, 1, 
 Running Test: 0.0359959602356 (s)
 
-maskinnersize = 3
+maskinnersize = 6
 1, 1, 1, 1, 1, 1, 1, 1, 1, 
 1, 1, 1, 1, 1, 1, 1, 1, 1, 
 1, 1, 0, 0, 0, 0, 0, 1, 1, 
@@ -22,7 +22,7 @@ maskinnersize = 3
 1, 1, 1, 1, 1, 1, 1, 1, 1, 
 Running Test: 0.039783000946 (s)
 
-maskinnersize = 2.5
+maskinnersize = 5
 1, 1, 1, 1, 1, 1, 1, 1, 1, 
 1, 1, 1, 1, 1, 1, 1, 1, 1, 
 1, 1, 1, 0, 0, 0, 1, 1, 1, 
@@ -34,7 +34,7 @@ maskinnersize = 2.5
 1, 1, 1, 1, 1, 1, 1, 1, 1, 
 Running Test: 0.0347919464111 (s)
 
-maskinnersize = 2.2
+maskinnersize = 4.4
 1, 1, 1, 1, 1, 1, 1, 1, 1, 
 1, 1, 1, 1, 1, 1, 1, 1, 1, 
 1, 1, 1, 1, 0, 1, 1, 1, 1, 
@@ -46,7 +46,7 @@ maskinnersize = 2.2
 1, 1, 1, 1, 1, 1, 1, 1, 1, 
 Running Test: 0.0354127883911 (s)
 
-maskinnersize = 2
+maskinnersize = 4
 1, 1, 1, 1, 1, 1, 1, 1, 1, 
 1, 1, 1, 1, 1, 1, 1, 1, 1, 
 1, 1, 1, 1, 1, 1, 1, 1, 1, 
@@ -58,7 +58,7 @@ maskinnersize = 2
 1, 1, 1, 1, 1, 1, 1, 1, 1, 
 Running Test: 0.0361340045929 (s)
 
-maskinnersize = 1.5
+maskinnersize = 3
 1, 1, 1, 1, 1, 1, 1, 1, 1, 
 1, 1, 1, 1, 1, 1, 1, 1, 1, 
 1, 1, 1, 1, 1, 1, 1, 1, 1, 
@@ -70,7 +70,7 @@ maskinnersize = 1.5
 1, 1, 1, 1, 1, 1, 1, 1, 1, 
 Running Test: 0.0348770618439 (s)
 
-maskinnersize = 1
+maskinnersize = 2
 1, 1, 1, 1, 1, 1, 1, 1, 1, 
 1, 1, 1, 1, 1, 1, 1, 1, 1, 
 1, 1, 1, 1, 1, 1, 1, 1, 1, 
