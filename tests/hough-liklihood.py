@@ -14,8 +14,8 @@ job = TestJob('hough-liklihood')
 job.profiling = False
 job.deviceCPU = False
 job.schedfixed = True
-job.parser.add_argument('-k', '--masksize', type=int, default=7)
-job.parser.add_argument('-z', '--maskinnersize', type=float, default=1.5)
+job.parser.add_argument('-k', '--masksize', type=int, default=13)
+job.parser.add_argument('-z', '--maskinnersize', type=float, default=6)
 
 t0 = job.run()
 print "Running Test:", t0, "(s)"
