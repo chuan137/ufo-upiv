@@ -159,8 +159,8 @@ static int prepare_test(gfloat* test, gfloat* input, int offset_x, int offset_y,
     len_y = (len_y + offset_y) > req_y ? req_y - offset_y : len_y;
     for (int i = 0; i < len_x; i++) {
         for (int j = 0; j < len_y; j++) {
-            id = i * len_x + j;
-            id_0 = (i+offset_x) * req_x + (j+offset_y);
+            id = j * len_x + i;
+            id_0 = (j+offset_y) * req_x + (i+offset_x);
             test[id] = input[id_0];
         }
     }
