@@ -6,7 +6,7 @@ from testjob import TestJob
 from utils import relpath
 import logging
 
-TestJob.inpath = relpath('../data/sampleB')
+TestJob.inpath = relpath('../data/input')
 TestJob.outfile = relpath('./output/contrast.tif')
 logging.basicConfig(level=logging.DEBUG,
                     filename='tests.log', filemode='w',

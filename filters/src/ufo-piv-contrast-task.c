@@ -157,13 +157,15 @@ static int prepare_test(gfloat* test, gfloat* input, int offset_x, int offset_y,
     int id, id_0;
     len_x= (len_x + offset_x) > req_x ? req_x - offset_x : len_x;
     len_y = (len_y + offset_y) > req_y ? req_y - offset_y : len_y;
-    for (int i = 0; i < len_x; i++) {
+
+    for (int i = 0; i < len_x -1 ; i++) {
         for (int j = 0; j < len_y; j++) {
-            id = i * len_x + j;
+            id = i * len_y + j;
             id_0 = (i+offset_x) * req_x + (j+offset_y);
             test[id] = input[id_0];
+
         }
-    }
+    } 
     return len_x*len_y;
 }
 
@@ -225,7 +227,8 @@ ufo_piv_contrast_task_process (UfoTask *task,
     offset_y = req_y / 4;
     len_x = req_x / 4;
     len_y = req_y / 4;
-   
+  
+
     in_mem = ufo_buffer_get_host_array(inputs[0], NULL);
     test_mem = (gfloat*) g_malloc0 (len_x * len_y * sizeof(gfloat));
 
@@ -250,7 +253,6 @@ ufo_piv_contrast_task_process (UfoTask *task,
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 6, sizeof (gfloat), &priv->c2));
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 7, sizeof (gfloat), &priv->c3));
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 8, sizeof (gfloat), &priv->c4));
-
     profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
     ufo_profiler_call (profiler, cmd_queue, priv->sigmoid_kernel, 1, &global_work_size, NULL);
 
