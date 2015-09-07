@@ -32,7 +32,10 @@
 struct _UfoCandidateSortingTaskPrivate {
     cl_kernel found_cand;
     cl_context context;
-    gboolean foo;
+    guint ring_start;
+    guint ring_step;
+    guint ring_end;
+    guint ring_current;
 };
 
 static void ufo_task_interface_init (UfoTaskIface *iface);
@@ -45,7 +48,9 @@ G_DEFINE_TYPE_WITH_CODE (UfoCandidateSortingTask, ufo_candidate_sorting_task, UF
 
 enum {
     PROP_0,
-    PROP_TEST,
+    PROP_RING_START,
+    PROP_RING_STEP,
+    PROP_RING_END,
     N_PROPERTIES
 };
 
@@ -111,7 +116,7 @@ ufo_candidate_sorting_task_process (UfoTask *task,
                          UfoBuffer *output,
                          UfoRequisition *requisition)
 {
-    UfoCandidateSortingTaskPrivate *priv = UFO_CANDIDATE_SORTING_TASK_GET_PRIVATE (task);
+    UfoCandidateSortingTaskPrivate *priv;
     UfoGpuNode  *node;   
     UfoProfiler *profiler;
     UfoRequisition req;    
@@ -122,17 +127,24 @@ ufo_candidate_sorting_task_process (UfoTask *task,
     cl_int error;
     unsigned counter_cpu = 0;
     size_t mem_size_c[2];
+
+    priv = UFO_CANDIDATE_SORTING_TASK_GET_PRIVATE (task);
     node = UFO_GPU_NODE (ufo_task_node_get_proc_node (UFO_TASK_NODE (task)));
     cmd_queue = ufo_gpu_node_get_cmd_queue (node);
     profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
+
     in_mem_gpu = ufo_buffer_get_device_array(inputs[0], cmd_queue);
   
-    ufo_buffer_get_requisition(inputs[0],&req);
     mem_size_c[0] = (size_t) req.dims[0];
     mem_size_c[1] = (size_t) req.dims[1];
     
-    coord = clCreateBuffer(priv->context, CL_MEM_READ_WRITE,sizeof(cl_int) * (2*mem_size_c[0]*mem_size_c[1])  ,NULL,&error);UFO_RESOURCES_CHECK_CLERR(error);
-    counter = clCreateBuffer(priv->context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,sizeof(cl_uint), &counter_cpu, &error);UFO_RESOURCES_CHECK_CLERR(error);
+    coord = clCreateBuffer(priv->context, CL_MEM_READ_WRITE,
+            sizeof(cl_int) * (2*mem_size_c[0]*mem_size_c[1]), NULL, &error);
+    UFO_RESOURCES_CHECK_CLERR(error);
+
+    counter = clCreateBuffer(priv->context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+            sizeof(cl_uint), &counter_cpu, &error);
+    UFO_RESOURCES_CHECK_CLERR(error);
 
     UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->found_cand,0,sizeof(cl_mem),&in_mem_gpu));
     UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->found_cand,1,sizeof(cl_mem),&coord));
@@ -161,6 +173,7 @@ ufo_candidate_sorting_task_process (UfoTask *task,
     {
         dst->coord[g].x = coordinates_cpu[g << 1];
         dst->coord[g].y = coordinates_cpu[(g << 1) +1];
+        dst->coord[g].r = priv->ring_current;
     }
 
     res[0] = (float) dst->nb_elt;
@@ -169,6 +182,11 @@ ufo_candidate_sorting_task_process (UfoTask *task,
     UFO_RESOURCES_CHECK_CLERR(clReleaseMemObject(coord));
     UFO_RESOURCES_CHECK_CLERR(clReleaseMemObject(counter));
 
+    if (priv->ring_current + priv->ring_step > priv->ring_end)
+        priv->ring_current = priv->ring_start;
+    else
+        priv->ring_current += priv->ring_step;
+  
     free(coordinates_cpu);
     free(dst->coord);
     free(dst);
@@ -184,7 +202,15 @@ ufo_candidate_sorting_task_set_property (GObject *object,
     UfoCandidateSortingTaskPrivate *priv = UFO_CANDIDATE_SORTING_TASK_GET_PRIVATE (object);
 
     switch (property_id) {
-        case PROP_TEST:
+        case PROP_RING_START:
+            priv->ring_start = g_value_get_uint(value);
+            priv->ring_current = priv->ring_start;
+            break;
+        case PROP_RING_STEP:
+            priv->ring_step = g_value_get_uint(value);
+            break;
+        case PROP_RING_END:
+            priv->ring_end = g_value_get_uint(value);
             break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -201,7 +227,14 @@ ufo_candidate_sorting_task_get_property (GObject *object,
     UfoCandidateSortingTaskPrivate *priv = UFO_CANDIDATE_SORTING_TASK_GET_PRIVATE (object);
 
     switch (property_id) {
-        case PROP_TEST:
+        case PROP_RING_START:
+            g_value_set_uint (value, priv->ring_start);
+            break;
+        case PROP_RING_STEP:
+            g_value_set_uint (value, priv->ring_step);
+            break;
+        case PROP_RING_END:
+            g_value_set_uint (value, priv->ring_end);
             break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -212,8 +245,6 @@ ufo_candidate_sorting_task_get_property (GObject *object,
 static void
 ufo_candidate_sorting_task_finalize (GObject *object)
 {
-
-
         UfoCandidateSortingTaskPrivate *priv = UFO_CANDIDATE_SORTING_TASK_GET_PRIVATE (object);
 
     if(priv->found_cand)
@@ -244,12 +275,23 @@ ufo_candidate_sorting_task_class_init (UfoCandidateSortingTaskClass *klass)
     oclass->get_property = ufo_candidate_sorting_task_get_property;
     oclass->finalize = ufo_candidate_sorting_task_finalize;
 
-    properties[PROP_TEST] =
-        g_param_spec_string ("test",
-            "Test property nick",
-            "Test property description blurb",
-            "",
-            G_PARAM_READWRITE);
+    properties[PROP_RING_START] = 
+        g_param_spec_uint ("ring_start",
+               "", "",
+               1, G_MAXUINT, 5,
+               G_PARAM_READWRITE);
+
+    properties[PROP_RING_STEP] = 
+        g_param_spec_uint ("ring_step",
+               "", "",
+               1, G_MAXUINT, 2,
+               G_PARAM_READWRITE);
+
+    properties[PROP_RING_END] = 
+        g_param_spec_uint ("ring_end",
+               "", "",
+               1, G_MAXUINT, 5,
+               G_PARAM_READWRITE);
 
     for (guint i = PROP_0 + 1; i < N_PROPERTIES; i++)
         g_object_class_install_property (oclass, i, properties[i]);
@@ -261,4 +303,8 @@ static void
 ufo_candidate_sorting_task_init(UfoCandidateSortingTask *self)
 {
     self->priv = UFO_CANDIDATE_SORTING_TASK_GET_PRIVATE(self);
+    self->priv->ring_start = 5;
+    self->priv->ring_end = 5;
+    self->priv->ring_step = 2;
+    self->priv->ring_current = self->priv->ring_start;
 }
