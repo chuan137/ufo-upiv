@@ -163,11 +163,12 @@ ufo_candidate_sorting_task_process (UfoTask *task,
         dst->coord[g].y = coordinates_cpu[(g << 1) +1];
     }
 
-    memcpy(res,dst,(unsigned) (dst->nb_elt) * sizeof (UfoRingCoordinate) + sizeof (float));
-   
+    res[0] = (float) dst->nb_elt;
+    memcpy (&res[1], dst->coord, (dst->nb_elt) * sizeof (UfoRingCoordinate) );
+
     UFO_RESOURCES_CHECK_CLERR(clReleaseMemObject(coord));
     UFO_RESOURCES_CHECK_CLERR(clReleaseMemObject(counter));
-   
+
     free(coordinates_cpu);
     free(dst->coord);
     free(dst);
