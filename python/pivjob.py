@@ -19,7 +19,11 @@ default_parms = dict(
         xshift      = 0,
         yshift      = 0,
         maxima_sigma = 3.0, 
-        blob_alpha  = 1.0 )
+        blob_alpha  = 1.0,
+        likelihoodmask = 11,
+        likelihoodmaskinner = 6,
+        width       = 1024,
+        height      = 1024 )
 
 class PivJob(UfoJob):
     def __init__(self, parms={}):
@@ -35,7 +39,7 @@ class PivJob(UfoJob):
         p  = self.parms
         sc = self.parms.scale
 
-        self.add_task('crop', x=p.xshift, y=p.yshift, width=1024, height=1024)
+        self.add_task('crop', x=p.xshift, y=p.yshift, width=p.width, height=p.height)
         self.add_task('contrast', 'piv_contrast')
         self.add_task('rescale', factor=1.0/sc)
         self.add_task('input_fft', 'fft', dimensions=2)
@@ -48,7 +52,7 @@ class PivJob(UfoJob):
         self.add_task('ring_pattern', 
                   start=p.ring_start/sc, end=p.ring_end/sc, step=p.ring_step/sc, 
                   thickness=p.ring_thickness/sc, method=p.ring_method, 
-                  width=1024/sc, height=1024/sc)
+                  width=p.width/sc, height=p.height/sc)
 
         self.add_task('hessian_kernel', sigma=2.0/sc, width=1024/sc, height=1024/sc)
         self.add_task('hessian_fft', 'fft', dimensions=2)
@@ -58,6 +62,7 @@ class PivJob(UfoJob):
         self.add_copy_task('hessian_broadcast') 
 
         self.add_task('ifft', dimensions=2)
+        self.add_task('likelihood', 'hough-liklihood', masksize=p.likelihoodmask, maskinnersize=p.likelihoodmaskinner)
 
         self.add_task('local_maxima', sigma=p.maxima_sigma)
         self.add_task('label_cluster', 'label-cluster')
@@ -89,8 +94,16 @@ class PivJob(UfoJob):
     def setup_tasks(self):
         pass
 
-    def setup_graph(self, flag):
-        if flag == 1:
+    def setup_graph(self, flag=0):
+        if flag == 0:
+            b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'input_fft')
+            #b1 = self.branch('read', 'crop', 'rescale', 'input_fft')
+            b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')
+            #b3 = self.branch('ring_convolution', 'ifft', 'likelihood', 'null')
+            #b3 = self.branch('ring_convolution', 'ifft', 'ring_slice', 'write')
+            b3 = self.branch('ring_convolution', 'ifft', 'ring_slice', 'likelihood', 'write')
+            self.graph.merge_branch(b1, b2, b3)
+        elif flag == 1:
             b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'input_fft')#, 'm1')
             b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')#, 'm2')
             b3 = self.branch('ring_convolution', 'ifft', 'write')
@@ -104,7 +117,7 @@ class PivJob(UfoJob):
             b4 = self.branch('hessian_kernel', 'hessian_fft', 'hessian_loop')
             b5 = self.branch('hessian_convolution', 'ifft', 'hessian_analysis', 'write')
             self.graph.merge_branch(b3, b4, b5)
-        else:
+        elif flag == 3:
             b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'input_fft')
             b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')
             b3 = self.branch('ring_convolution', 'ring_slice')
@@ -120,7 +133,7 @@ class PivJob(UfoJob):
             b7 = self.branch('blob_test', 'stack3', 'sum', 'write')
             self.graph.merge_branch(b5, b6, b7)
 
-    def run(self, flag=None):
+    def run(self, flag=0):
         self.setup_tasks()
         self.setup_graph(flag)
         self.log_tasks()
