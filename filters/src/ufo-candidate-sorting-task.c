@@ -36,6 +36,7 @@ struct _UfoCandidateSortingTaskPrivate {
     guint ring_step;
     guint ring_end;
     guint ring_current;
+    gfloat threshold;
 };
 
 static void ufo_task_interface_init (UfoTaskIface *iface);
@@ -51,6 +52,7 @@ enum {
     PROP_RING_START,
     PROP_RING_STEP,
     PROP_RING_END,
+    PROP_THRESHOLD,
     N_PROPERTIES
 };
 
@@ -70,13 +72,11 @@ ufo_candidate_sorting_task_setup (UfoTask *task,
     UfoCandidateSortingTaskPrivate *priv = UFO_CANDIDATE_SORTING_TASK_GET_PRIVATE(task);
     
     priv->found_cand = ufo_resources_get_kernel(resources, "found_cand.cl", NULL, error);
-    priv->context = ufo_resources_get_context(resources);
-    if(priv->found_cand)
-    {
+
+    if (priv->found_cand)
         UFO_RESOURCES_CHECK_CLERR(clRetainKernel(priv->found_cand));
-    }
 
-
+    priv->context = ufo_resources_get_context(resources);
 }
 
 static void
@@ -121,7 +121,7 @@ ufo_candidate_sorting_task_process (UfoTask *task,
     UfoProfiler *profiler;
     UfoRequisition req;    
     cl_command_queue cmd_queue;
-    cl_mem in_mem_gpu;
+    cl_mem in_mem;
     cl_mem coord;
     cl_mem counter;
     cl_int error;
@@ -133,8 +133,9 @@ ufo_candidate_sorting_task_process (UfoTask *task,
     cmd_queue = ufo_gpu_node_get_cmd_queue (node);
     profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
 
-    in_mem_gpu = ufo_buffer_get_device_array(inputs[0], cmd_queue);
-  
+    ufo_buffer_get_requisition (inputs[0], &req);
+    in_mem = ufo_buffer_get_device_array(inputs[0], cmd_queue);
+
     mem_size_c[0] = (size_t) req.dims[0];
     mem_size_c[1] = (size_t) req.dims[1];
     
@@ -146,9 +147,10 @@ ufo_candidate_sorting_task_process (UfoTask *task,
             sizeof(cl_uint), &counter_cpu, &error);
     UFO_RESOURCES_CHECK_CLERR(error);
 
-    UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->found_cand,0,sizeof(cl_mem),&in_mem_gpu));
+    UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->found_cand,0,sizeof(cl_mem),&in_mem));
     UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->found_cand,1,sizeof(cl_mem),&coord));
     UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->found_cand,2,sizeof(cl_mem),&counter));
+    UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->found_cand,3,sizeof(float), &(priv->threshold)));
 
     ufo_profiler_call(profiler,cmd_queue,priv->found_cand,2,mem_size_c,NULL);
 
@@ -163,6 +165,8 @@ ufo_candidate_sorting_task_process (UfoTask *task,
     URCS* dst = (URCS*) malloc(sizeof(URCS));
     dst->nb_elt = counter_cpu;
     dst->coord = (UfoRingCoordinate*) malloc(sizeof(UfoRingCoordinate) * (counter_cpu));
+
+    g_warning ("counter %d", counter_cpu);
 
     ufo_buffer_resize(output,&new_req);
 
@@ -212,6 +216,9 @@ ufo_candidate_sorting_task_set_property (GObject *object,
         case PROP_RING_END:
             priv->ring_end = g_value_get_uint(value);
             break;
+        case PROP_THRESHOLD:
+            priv->threshold = g_value_get_float(value);
+            break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
             break;
@@ -236,6 +243,9 @@ ufo_candidate_sorting_task_get_property (GObject *object,
         case PROP_RING_END:
             g_value_set_uint (value, priv->ring_end);
             break;
+        case PROP_THRESHOLD:
+            g_value_set_float(value, priv->threshold);
+            break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
             break;
@@ -245,12 +255,10 @@ ufo_candidate_sorting_task_get_property (GObject *object,
 static void
 ufo_candidate_sorting_task_finalize (GObject *object)
 {
-        UfoCandidateSortingTaskPrivate *priv = UFO_CANDIDATE_SORTING_TASK_GET_PRIVATE (object);
+    UfoCandidateSortingTaskPrivate *priv = UFO_CANDIDATE_SORTING_TASK_GET_PRIVATE (object);
 
     if(priv->found_cand)
-    {
         UFO_RESOURCES_CHECK_CLERR(clReleaseKernel(priv->found_cand));
-    }
     
     G_OBJECT_CLASS (ufo_candidate_sorting_task_parent_class)->finalize (object);
 }
@@ -293,6 +301,12 @@ ufo_candidate_sorting_task_class_init (UfoCandidateSortingTaskClass *klass)
                1, G_MAXUINT, 5,
                G_PARAM_READWRITE);
 
+    properties[PROP_THRESHOLD] = 
+        g_param_spec_float ("threshold",
+               "", "",
+               G_MINFLOAT, G_MAXFLOAT, 300.0f,
+               G_PARAM_READWRITE);
+
     for (guint i = PROP_0 + 1; i < N_PROPERTIES; i++)
         g_object_class_install_property (oclass, i, properties[i]);
 
@@ -307,4 +321,5 @@ ufo_candidate_sorting_task_init(UfoCandidateSortingTask *self)
     self->priv->ring_end = 5;
     self->priv->ring_step = 2;
     self->priv->ring_current = self->priv->ring_start;
+    self->priv->threshold = 300.0;
 }
