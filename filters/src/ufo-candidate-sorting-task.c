@@ -84,11 +84,8 @@ ufo_candidate_sorting_task_get_requisition (UfoTask *task,
                                  UfoBuffer **inputs,
                                  UfoRequisition *requisition)
 {
-    //what should I put here?
-    /* input[0] : contrasted image */
-    /* input[1] : coordinate list */
-    ufo_buffer_get_requisition (inputs[0], requisition);
-    printf("I WAS HERE\n");
+    requisition->n_dims = 1;
+    requisition->dims[0] = 1;
 }
 
 static guint
@@ -101,7 +98,7 @@ static guint
 ufo_candidate_sorting_task_get_num_dimensions (UfoTask *task,
                                              guint input)
 {
-    return 2;
+    return -1;
 }
 
 static UfoTaskMode
@@ -140,7 +137,7 @@ ufo_candidate_sorting_task_process (UfoTask *task,
     mem_size_c[1] = (size_t) req.dims[1];
     
     coord = clCreateBuffer(priv->context, CL_MEM_READ_WRITE,
-            sizeof(cl_int) * (2*mem_size_c[0]*mem_size_c[1]), NULL, &error);
+            sizeof(cl_float) * (3*mem_size_c[0]*mem_size_c[1]), NULL, &error);
     UFO_RESOURCES_CHECK_CLERR(error);
 
     counter = clCreateBuffer(priv->context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
@@ -156,17 +153,15 @@ ufo_candidate_sorting_task_process (UfoTask *task,
 
     clEnqueueReadBuffer(cmd_queue,counter,CL_TRUE,0,sizeof(cl_uint),&counter_cpu,0,NULL,NULL);
 
-    int* coordinates_cpu = (int*) malloc(sizeof(int) * (2*counter_cpu +2));
+    float* coordinates_cpu = (float*) malloc(sizeof(float) * (3*counter_cpu +3));
 
-    clEnqueueReadBuffer(cmd_queue,coord,CL_TRUE,0,sizeof(cl_int)*counter_cpu*2,coordinates_cpu,0,NULL,NULL);
+    clEnqueueReadBuffer(cmd_queue,coord,CL_TRUE,0,sizeof(cl_float)*counter_cpu*3,coordinates_cpu,0,NULL,NULL);
 
     UfoRequisition new_req = {.dims[0] = 1+(unsigned)counter_cpu*sizeof(UfoRingCoordinate)/sizeof(float), .n_dims = 1 };   
 
     URCS* dst = (URCS*) malloc(sizeof(URCS));
     dst->nb_elt = counter_cpu;
     dst->coord = (UfoRingCoordinate*) malloc(sizeof(UfoRingCoordinate) * (counter_cpu));
-
-    g_warning ("counter %d", counter_cpu);
 
     ufo_buffer_resize(output,&new_req);
 
@@ -175,9 +170,11 @@ ufo_candidate_sorting_task_process (UfoTask *task,
     //Manual memcpy---->> Better debugging
     for(unsigned g = 0; g < counter_cpu;g++)
     {
-        dst->coord[g].x = coordinates_cpu[g << 1];
-        dst->coord[g].y = coordinates_cpu[(g << 1) +1];
+        dst->coord[g].x = coordinates_cpu[3*g];
+        dst->coord[g].y = coordinates_cpu[3*g+1];
         dst->coord[g].r = priv->ring_current;
+        dst->coord[g].contrast = coordinates_cpu[3*g+2];
+        dst->coord[g].intensity = 0.0f;
     }
 
     res[0] = (float) dst->nb_elt;

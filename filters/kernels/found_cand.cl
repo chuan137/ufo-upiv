@@ -1,5 +1,5 @@
 __kernel void found_cand(__global float* input, 
-                         __global int* positions, 
+                         __global float* positions, 
                          __global unsigned* counter, 
                          __const float thredshold)
 {
@@ -12,7 +12,8 @@ __kernel void found_cand(__global float* input,
     if(input[idx] > thredshold)
     {
         old = atomic_inc(&counter[0]);
-        positions[old << 1] = x; //save x coordinate
-        positions[(old << 1) + 1] = y; //save y coordinate
+        positions[3*old] = (float)x; //save x coordinate
+        positions[3*old + 1] = (float)y; //save y coordinate
+        positions[3*old + 2] = input[idx];
     }
 }
