@@ -118,79 +118,62 @@ ufo_candidate_sorting_task_process (UfoTask *task,
     UfoProfiler *profiler;
     UfoRequisition req;    
     cl_command_queue cmd_queue;
-    cl_mem in_mem;
-    cl_mem coord;
-    cl_mem counter;
     cl_int error;
-    unsigned counter_cpu = 0;
-    size_t mem_size_c[2];
+    int max_cand = 500;
 
     priv = UFO_CANDIDATE_SORTING_TASK_GET_PRIVATE (task);
     node = UFO_GPU_NODE (ufo_task_node_get_proc_node (UFO_TASK_NODE (task)));
     cmd_queue = ufo_gpu_node_get_cmd_queue (node);
     profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
 
-    ufo_buffer_get_requisition (inputs[0], &req);
-    in_mem = ufo_buffer_get_device_array(inputs[0], cmd_queue);
+    cl_mem in_mem = ufo_buffer_get_device_array(inputs[0], cmd_queue);
 
-    mem_size_c[0] = (size_t) req.dims[0];
-    mem_size_c[1] = (size_t) req.dims[1];
-    
-    coord = clCreateBuffer(priv->context, CL_MEM_READ_WRITE,
-            sizeof(cl_float) * (3*mem_size_c[0]*mem_size_c[1]), NULL, &error);
-    UFO_RESOURCES_CHECK_CLERR(error);
+    req.n_dims = 1;
+    req.dims[0] = 4*max_cand;
+    UfoBuffer *cand_buf = ufo_buffer_new(&req, priv->context);
+    cl_mem cand = ufo_buffer_get_device_array (cand_buf, cmd_queue);
 
-    counter = clCreateBuffer(priv->context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-            sizeof(cl_uint), &counter_cpu, &error);
+    unsigned cand_ct = 0;
+    cl_mem counter = clCreateBuffer(priv->context, 
+                                    CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                                    sizeof(cl_uint), &cand_ct, &error);
     UFO_RESOURCES_CHECK_CLERR(error);
 
     UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->found_cand,0,sizeof(cl_mem),&in_mem));
-    UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->found_cand,1,sizeof(cl_mem),&coord));
+    UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->found_cand,1,sizeof(cl_mem),&cand));
     UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->found_cand,2,sizeof(cl_mem),&counter));
     UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->found_cand,3,sizeof(float), &(priv->threshold)));
 
-    ufo_profiler_call(profiler,cmd_queue,priv->found_cand,2,mem_size_c,NULL);
-
-    clEnqueueReadBuffer(cmd_queue,counter,CL_TRUE,0,sizeof(cl_uint),&counter_cpu,0,NULL,NULL);
-
-    float* coordinates_cpu = (float*) malloc(sizeof(float) * (3*counter_cpu +3));
-
-    clEnqueueReadBuffer(cmd_queue,coord,CL_TRUE,0,sizeof(cl_float)*counter_cpu*3,coordinates_cpu,0,NULL,NULL);
-
-    UfoRequisition new_req = {.dims[0] = 1+(unsigned)counter_cpu*sizeof(UfoRingCoordinate)/sizeof(float), .n_dims = 1 };   
-
-    URCS* dst = (URCS*) malloc(sizeof(URCS));
-    dst->nb_elt = counter_cpu;
-    dst->coord = (UfoRingCoordinate*) malloc(sizeof(UfoRingCoordinate) * (counter_cpu));
-
-    ufo_buffer_resize(output,&new_req);
-
-    float* res = ufo_buffer_get_host_array(output,NULL);
- 
-    //Manual memcpy---->> Better debugging
-    for(unsigned g = 0; g < counter_cpu;g++)
+    ufo_buffer_get_requisition (inputs[0], &req);
+    gsize g_work_size[] = { req.dims[0], req.dims[1] };
+    for (guint n = 0; n < req.dims[2]; n++)
     {
-        dst->coord[g].x = coordinates_cpu[3*g];
-        dst->coord[g].y = coordinates_cpu[3*g+1];
-        dst->coord[g].r = priv->ring_current;
-        dst->coord[g].contrast = coordinates_cpu[3*g+2];
-        dst->coord[g].intensity = 0.0f;
+        UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->found_cand,4,sizeof(guint), &n));
+        ufo_profiler_call(profiler,cmd_queue,priv->found_cand,2,g_work_size,NULL);
     }
 
-    res[0] = (float) dst->nb_elt;
-    memcpy (&res[1], dst->coord, (dst->nb_elt) * sizeof (UfoRingCoordinate) );
+    clEnqueueReadBuffer(cmd_queue,counter,CL_TRUE,0,sizeof(cl_uint),&cand_ct,0,NULL,NULL);
+    float *cand_cpu = ufo_buffer_get_host_array (cand_buf, NULL);
 
-    UFO_RESOURCES_CHECK_CLERR(clReleaseMemObject(coord));
+    req.n_dims = 1;
+    req.dims[0] = 1 + cand_ct * sizeof(UfoRingCoordinate) / sizeof (float);
+    ufo_buffer_resize(output, &req);
+
+    float* res = ufo_buffer_get_host_array(output,NULL);
+    res[0] = cand_ct;
+    UfoRingCoordinate *rings = (UfoRingCoordinate*) &res[1];
+    for(unsigned g = 0; g < cand_ct; g++)
+    {
+        rings[g].x = cand_cpu[3*g];
+        rings[g].y = cand_cpu[3*g+1];
+        rings[g].r = priv->ring_start + priv->ring_step * cand_cpu[3*g+2];
+        rings[g].contrast = cand_cpu[3*g+3];
+        rings[g].intensity = 0.0f;
+    }
+
+    g_object_unref (cand_buf);
     UFO_RESOURCES_CHECK_CLERR(clReleaseMemObject(counter));
 
-    if (priv->ring_current + priv->ring_step > priv->ring_end)
-        priv->ring_current = priv->ring_start;
-    else
-        priv->ring_current += priv->ring_step;
-  
-    free(coordinates_cpu);
-    free(dst->coord);
-    free(dst);
     return TRUE;
 }
 
