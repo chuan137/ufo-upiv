@@ -192,7 +192,8 @@ ufo_hough_likelihood_task_process (UfoTask *task,
     out_mem = ufo_buffer_get_device_array (output, cmd_queue);
     tmp_buf = ufo_buffer_new (&tmp_req, priv->context);
 
-    for (guint n = 0; n < requisition->dims[2]; n++)
+    int number = (requisition->n_dims == 3) ? requisition->dims[2] : 1;
+    for (guint n = 0; n < number; n++)
     {
         ufo_buffer_copy_region (inputs[0], tmp_buf, n, cmd_queue);
         tmp_img = ufo_buffer_get_device_image (tmp_buf, cmd_queue);

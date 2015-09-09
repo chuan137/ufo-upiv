@@ -10,7 +10,7 @@ TestJob.outfile = relpath('./output/liklihood.tif')
 logging.basicConfig(level=logging.DEBUG, filename='.tests.log', filemode='a',
                     format='%(name)s %(levelname)s %(message)s')
 
-job = TestJob('hough-liklihood')
+job = TestJob('hough-likelihood')
 job.profiling = False
 job.deviceCPU = False
 job.schedfixed = True
