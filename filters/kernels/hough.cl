@@ -4,10 +4,12 @@ kernel void
 likelihood (global float *output, 
             read_only image2d_t input, 
             constant int *mask,
-            private int maskSizeH)
+            int maskSizeH, 
+            int n)
 {
     const int2 pos = (int2) (get_global_id (0), get_global_id (1));
 
+    int idx;
     int count = 0;
     float f;
     float mean = 0.0;
@@ -36,6 +38,7 @@ likelihood (global float *output,
     std = sqrt(std/count);
  
     f = read_imagef(input, smp, pos).x;
-    output[pos.x + pos.y*get_global_size(0)] = exp((f - mean)/std);
+    idx = pos.x + pos.y*get_global_size(0) + n*get_global_size(0)*get_global_size(1);
+    output[idx] = exp((f - mean)/std);
 }
 

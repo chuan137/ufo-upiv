@@ -75,6 +75,9 @@ ufo_hough_likelihood_task_setup (UfoTask *task,
     priv->context = ufo_resources_get_context (resources);
     priv->kernel = ufo_resources_get_kernel (resources, "hough.cl", "likelihood", error);
 
+    if (priv->kernel)
+        UFO_RESOURCES_CHECK_CLERR(clRetainKernel(priv->kernel));
+
     mask = g_malloc0 (priv->masksize * priv->masksize * sizeof (int));
     priv->masksize_h = (priv->masksize - 1) / 2;
     maskinnersize_h = priv->maskinnersize / 2;
@@ -88,13 +91,15 @@ ufo_hough_likelihood_task_setup (UfoTask *task,
             }
 
     // debug mask
-    int *mask0 = mask;
-    for (i = 0; i < priv->masksize; i++)
-    {
-        for (j = 0; j < priv->masksize; j++, mask0++)
-            g_printf ("%d, ", *mask0);
-        g_printf("\n");
-    }
+    /*
+     *int *mask0 = mask;
+     *for (i = 0; i < priv->masksize; i++)
+     *{
+     *    for (j = 0; j < priv->masksize; j++, mask0++)
+     *        g_printf ("%d, ", *mask0);
+     *    g_printf("\n");
+     *}
+     */
 
     if (priv->mask_mem)
         UFO_RESOURCES_CHECK_CLERR (clReleaseMemObject (priv->mask_mem));
@@ -122,7 +127,7 @@ static guint
 ufo_hough_likelihood_task_get_num_dimensions (UfoTask *task,
                                              guint input)
 {
-    return 2;
+    return -1;
 }
 
 static UfoTaskMode
@@ -130,6 +135,35 @@ ufo_hough_likelihood_task_get_mode (UfoTask *task)
 {
     return UFO_TASK_MODE_PROCESSOR | UFO_TASK_MODE_GPU;
 }
+
+static void 
+ufo_buffer_copy_region(UfoBuffer *src, 
+                       UfoBuffer *dst,
+                       const guint n, 
+                       cl_command_queue cmd_queue) 
+{
+    g_return_if_fail ( UFO_IS_BUFFER (src) );
+
+    UfoRequisition src_req;
+    ufo_buffer_get_requisition(src, &src_req);
+    cl_mem src_mem = ufo_buffer_get_device_array(src, cmd_queue);
+
+    UfoRequisition dst_req = src_req;
+    dst_req.n_dims = 2;
+    ufo_buffer_resize (dst, &dst_req);
+    cl_mem dst_mem  = ufo_buffer_get_device_array(dst, cmd_queue);
+
+    size_t src_origin[] = {0, 0, n};
+    size_t dst_origin[] = {0, 0, 0};
+    size_t region[]     = {src_req.dims[0] * sizeof (float), src_req.dims[1], 1};
+
+    UFO_RESOURCES_CHECK_CLERR ( 
+             clEnqueueCopyBufferRect( cmd_queue,
+                                      src_mem, dst_mem,
+                                      src_origin, dst_origin, region,
+                                      0, 0, 0, 0, 0, NULL, NULL));
+}
+
 
 static gboolean
 ufo_hough_likelihood_task_process (UfoTask *task,
@@ -140,23 +174,39 @@ ufo_hough_likelihood_task_process (UfoTask *task,
     UfoHoughLikelihoodTaskPrivate *priv;
     UfoGpuNode *node;
     UfoProfiler *profiler;
+    UfoRequisition tmp_req;
+    UfoBuffer *tmp_buf;
     cl_command_queue cmd_queue;
-    cl_mem in_image;
+    cl_mem tmp_img;
     cl_mem out_mem;
 
     priv = UFO_HOUGH_LIKELIHOOD_TASK_GET_PRIVATE (task);
     node = UFO_GPU_NODE (ufo_task_node_get_proc_node (UFO_TASK_NODE (task)));
     profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
     cmd_queue = ufo_gpu_node_get_cmd_queue (node);
-    in_image = ufo_buffer_get_device_image (inputs[0], cmd_queue);
+
+    tmp_req.n_dims = 1;
+    tmp_req.dims[0] = 1;
+    gsize g_work_size[] = { requisition->dims[0], requisition->dims[1] };
+
     out_mem = ufo_buffer_get_device_array (output, cmd_queue);
+    tmp_buf = ufo_buffer_new (&tmp_req, priv->context);
 
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 0, sizeof (cl_mem), &out_mem));
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 1, sizeof (cl_mem), &in_image));
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 2, sizeof (cl_mem), &priv->mask_mem));
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 3, sizeof (int), &priv->masksize_h));
+    for (guint n = 0; n < requisition->dims[2]; n++)
+    {
+        ufo_buffer_copy_region (inputs[0], tmp_buf, n, cmd_queue);
+        tmp_img = ufo_buffer_get_device_image (tmp_buf, cmd_queue);
 
-    ufo_profiler_call (profiler, cmd_queue, priv->kernel, 2, requisition->dims, NULL);
+        UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 0, sizeof(cl_mem), &out_mem));
+        UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 1, sizeof(cl_mem), &tmp_img));
+        UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 2, sizeof(cl_mem), &priv->mask_mem));
+        UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 3, sizeof(int), &priv->masksize_h));
+        UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 4, sizeof(guint), &n));
+
+        ufo_profiler_call (profiler, cmd_queue, priv->kernel, 2, g_work_size, NULL);
+    }
+
+    g_object_unref(tmp_buf);
 
     return TRUE;
 }
