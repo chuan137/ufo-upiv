@@ -139,6 +139,8 @@ ufo_candidate_sorting_task_process (UfoTask *task,
                                     sizeof(cl_uint), &cand_ct, &error);
     UFO_RESOURCES_CHECK_CLERR(error);
 
+    g_warning ("threshold %f", priv->threshold);
+
     UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->found_cand,0,sizeof(cl_mem),&in_mem));
     UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->found_cand,1,sizeof(cl_mem),&cand));
     UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->found_cand,2,sizeof(cl_mem),&counter));
@@ -164,10 +166,10 @@ ufo_candidate_sorting_task_process (UfoTask *task,
     UfoRingCoordinate *rings = (UfoRingCoordinate*) &res[1];
     for(unsigned g = 0; g < cand_ct; g++)
     {
-        rings[g].x = cand_cpu[3*g];
-        rings[g].y = cand_cpu[3*g+1];
-        rings[g].r = priv->ring_start + priv->ring_step * cand_cpu[3*g+2];
-        rings[g].contrast = cand_cpu[3*g+3];
+        rings[g].x = cand_cpu[4*g];
+        rings[g].y = cand_cpu[4*g+1];
+        rings[g].r = priv->ring_start + priv->ring_step * cand_cpu[4*g+2];
+        rings[g].contrast = cand_cpu[4*g+3];
         rings[g].intensity = 0.0f;
     }
 
