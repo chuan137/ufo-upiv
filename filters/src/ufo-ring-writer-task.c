@@ -19,6 +19,7 @@
 
 #include <stdio.h>
 #include "ufo-ring-writer-task.h"
+#include "ufo-ring-coordinates.h"
 
 
 struct _UfoRingWriterTaskPrivate {
@@ -87,23 +88,19 @@ ufo_ring_writer_task_process (UfoTask *task,
                          UfoBuffer *output,
                          UfoRequisition *requisition)
 {
-    char filename[256] = "rings.txt";
-    gsize size = ufo_buffer_get_size(inputs[0]); 
-    unsigned num = size / 8 / sizeof(gfloat);
-    g_warning ("RingWriter: number of rings %lu %u", size, num);
-    
     gfloat *in_mem = ufo_buffer_get_host_array (inputs[0], NULL);
-
-    UfoRequisition req;
-    ufo_buffer_get_requisition (inputs[0], &req);
+    UfoRingCoordinate *rings = (UfoRingCoordinate*) (&in_mem[1]);
+    unsigned num = in_mem[0]; 
 
     printf("#################################\n");
+    printf("RingWriter: number of rings %u\n", num);
     for (unsigned  i = 0; i < num; i++) {
-        printf("%8.0f %8.0f %8.0f %10.2f\n",
-                    in_mem[8*i+0],
-                    in_mem[8*i+1],
-                    in_mem[8*i+2],
-                    in_mem[8*i+3]);
+        printf("%8.0f %8.0f %8.0f %10.2f %10.2f\n",
+                rings[i].x,
+                rings[i].y,
+                rings[i].r,
+                rings[i].intensity,
+                rings[i].contrast );
     }
 
     return TRUE;
@@ -116,6 +113,7 @@ ufo_ring_writer_task_set_property (GObject *object,
                               GParamSpec *pspec)
 {
     UfoRingWriterTaskPrivate *priv = UFO_RING_WRITER_TASK_GET_PRIVATE (object);
+    (void) priv;
 
     switch (property_id) {
         case PROP_TEST:
@@ -133,6 +131,7 @@ ufo_ring_writer_task_get_property (GObject *object,
                               GParamSpec *pspec)
 {
     UfoRingWriterTaskPrivate *priv = UFO_RING_WRITER_TASK_GET_PRIVATE (object);
+    (void) priv;
 
     switch (property_id) {
         case PROP_TEST:
