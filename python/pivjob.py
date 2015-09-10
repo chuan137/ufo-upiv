@@ -54,15 +54,20 @@ class PivJob(UfoJob):
                   thickness=p.ring_thickness/sc, method=p.ring_method, 
                   width=p.width/sc, height=p.height/sc)
 
+        self.add_task('ifft', dimensions=2)
+        self.add_task('likelihood', 'hough-likelihood', 
+                masksize=p.likelihoodmask, maskinnersize=p.likelihoodmaskinner)
+        self.add_task('cand', 'candidate-sorting', threshold=p.candi_threshold,
+                ring_start=p.ring_start, ring_step=p.ring_step, ring_end=p.ring_end )
+        self.add_task('azimu', 'multi-search')
+        self.add_copy_task('bc_contrast') 
+
         self.add_task('hessian_kernel', sigma=2.0/sc, width=1024/sc, height=1024/sc)
         self.add_task('hessian_fft', 'fft', dimensions=2)
         self.add_task('hessian_loop', 'loop', count=p.number*p.ring_number)
         self.add_task('hessian_convolution', 'complex_mult')
         self.add_task('hessian_analysis')
         self.add_copy_task('hessian_broadcast') 
-
-        self.add_task('ifft', dimensions=2)
-        self.add_task('likelihood', 'hough-liklihood', masksize=p.likelihoodmask, maskinnersize=p.likelihoodmaskinner)
 
         self.add_task('local_maxima', sigma=p.maxima_sigma)
         self.add_task('label_cluster', 'label-cluster')
@@ -96,19 +101,24 @@ class PivJob(UfoJob):
 
     def setup_graph(self, flag=0):
         if flag == 0:
-            b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'input_fft')
-            #b1 = self.branch('read', 'crop', 'rescale', 'input_fft')
+            b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'bc_contrast', 'input_fft')
             b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')
-            #b3 = self.branch('ring_convolution', 'ifft', 'likelihood', 'null')
-            #b3 = self.branch('ring_convolution', 'ifft', 'ring_slice', 'write')
-            b3 = self.branch('ring_convolution', 'ifft', 'ring_slice', 'likelihood', 'write')
-            self.graph.merge_branch(b1, b2, b3)
+            b3 = self.branch('bc_contrast')
+            b4 = self.branch('ring_convolution', 'ifft', 'likelihood', 'cand')
+            b5 = self.branch('azimu', 'ring_writer')
+            self.graph.merge_branch(b1, b2, b4)
+            self.graph.merge_branch(b3, b4, b5)
         elif flag == 1:
+            b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'bc_contrast', 'input_fft')
+            b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')
+            b3 = self.branch('ring_convolution', 'ifft', 'likelihood', 'cand', 'ring_writer')
+            self.graph.merge_branch(b1, b2, b3)
+        elif flag == 2:
             b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'input_fft')#, 'm1')
             b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')#, 'm2')
             b3 = self.branch('ring_convolution', 'ifft', 'write')
             self.graph.merge_branch(b1, b2, b3)
-        elif flag == 2:
+        elif flag == 3:
             b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'input_fft')
             b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')
             b3 = self.branch('ring_convolution', 'ring_slice')
@@ -117,7 +127,7 @@ class PivJob(UfoJob):
             b4 = self.branch('hessian_kernel', 'hessian_fft', 'hessian_loop')
             b5 = self.branch('hessian_convolution', 'ifft', 'hessian_analysis', 'write')
             self.graph.merge_branch(b3, b4, b5)
-        elif flag == 3:
+        elif flag == 4:
             b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'input_fft')
             b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')
             b3 = self.branch('ring_convolution', 'ring_slice')
