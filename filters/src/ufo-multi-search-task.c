@@ -426,13 +426,13 @@ void* azimutal_wrapper(void* arg)
 
 //Function will read out current amount of threads and based on it it will return the division
 //factor for the thredas
-static unsigned thread_division(unsigned threads, unsigned max_threads,unsigned local_max_threads,unsigned* part_threads, unsigned *rest)
+static unsigned thread_division(unsigned threads, unsigned max_threads,unsigned local_max_threads,unsigned* part_threads, unsigned *rest, int min)
 {
 
     system("ps -eo nlwp | tail -n +2 | awk '{ num_threads += $1 } END { print num_threads }' > threads.txt");
     FILE *file;
     int ap_threads;
-    unsigned total;
+    unsigned g = 1;
     file = fopen("threads.txt","r");
     if(file == NULL)
     {
@@ -442,42 +442,37 @@ static unsigned thread_division(unsigned threads, unsigned max_threads,unsigned 
         return 4;
     }
 
+    if(max_threads == 0)
+        max_threads = 1024;
+
+    if(local_max_threads == 0)
+        local_max_threads = 600;
+
     fscanf(file,"%d",&ap_threads);
     fclose(file);
-    total = threads + ap_threads;
-    if(total >  max_threads)
+    for(g = min; g < threads; g++)
     {
-
-        for(unsigned g = 1; g < threads; g++)
-        {
-            part_threads[0] = threads/g;
-            if(part_threads[0] + ap_threads < max_threads && part_threads[0] < local_max_threads)
+       part_threads[0] = threads/g;
+       if(part_threads[0] + ap_threads < max_threads && part_threads[0] < local_max_threads)
+       {
+            if(threads % g != 0)
             {
-
-                if(threads % g != 0)
-                {
-                    rest[0] = threads % g;
-                }
-                else
-                {
-                    rest[0] = 0;
-                }
-
-                return g;
+                rest[0] = threads % g;
             }
+            else
+            {
+                rest[0] = 0;
+            }
+                return g;
         }
-    
+
+        printf("Could not find divisor matching the settings \n");
+        part_threads[0] = 1;
         rest[0] = 0;
-        part_threads[0] = 1; 
         return threads;
     }
-    else
-    {
-        part_threads[0] = threads;
-        rest[0] = 0;
-        return 1;
-    } 
 }
+
 
 
 
@@ -492,7 +487,7 @@ ufo_multi_search_task_process (UfoTask *task,
     unsigned counter_cpu = (unsigned) src->nb_elt;
     unsigned z,part,rest;
     
-    z = thread_division(counter_cpu,700,1010,&part,&rest);
+    z = thread_division(counter_cpu,1010,700,&part,&rest,4);
     URCS* dst =  g_malloc0(sizeof(URCS)*1);
     dst->coord =  g_malloc0(sizeof(UfoRingCoordinate) * counter_cpu);
 
