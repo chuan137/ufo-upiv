@@ -22,6 +22,7 @@ set(ufofilter_SRCS
     ufo-hough-likelihood-task.c
     ufo-candidate-sorting-task.c
     ufo-multi-search-task.c
+    ufo-device-info-task.c
     )
 
 #}}}
