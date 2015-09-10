@@ -107,6 +107,17 @@ ufo_candidate_sorting_task_get_mode (UfoTask *task)
     return UFO_TASK_MODE_PROCESSOR | UFO_TASK_MODE_GPU;
 }
 
+static int compare_candidates(UfoRingCoordinate *a, UfoRingCoordinate *b)
+{
+    if (abs(a->x - b->x) < 3 && abs(a->y - b->y) < 3) {
+        if (a->contrast > b->contrast)
+            return 0;
+        else 
+            return 1;
+    } 
+    return -1;
+}
+
 static gboolean
 ufo_candidate_sorting_task_process (UfoTask *task,
                          UfoBuffer **inputs,
@@ -129,14 +140,14 @@ ufo_candidate_sorting_task_process (UfoTask *task,
     cl_mem in_mem = ufo_buffer_get_device_array(inputs[0], cmd_queue);
 
     req.n_dims = 1;
-    req.dims[0] = 4*max_cand;
+    req.dims[0] = 5*max_cand;
     UfoBuffer *cand_buf = ufo_buffer_new(&req, priv->context);
     cl_mem cand = ufo_buffer_get_device_array (cand_buf, cmd_queue);
 
-    unsigned cand_ct = 0;
+    unsigned num_cand = 0;
     cl_mem counter = clCreateBuffer(priv->context, 
                                     CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-                                    sizeof(cl_uint), &cand_ct, &error);
+                                    sizeof(cl_uint), &num_cand, &error);
     UFO_RESOURCES_CHECK_CLERR(error);
 
     g_warning ("threshold %f", priv->threshold);
@@ -154,23 +165,58 @@ ufo_candidate_sorting_task_process (UfoTask *task,
         ufo_profiler_call(profiler,cmd_queue,priv->found_cand,2,g_work_size,NULL);
     }
 
-    clEnqueueReadBuffer(cmd_queue,counter,CL_TRUE,0,sizeof(cl_uint),&cand_ct,0,NULL,NULL);
+    clEnqueueReadBuffer(cmd_queue,counter,CL_TRUE,0,sizeof(cl_uint),&num_cand,0,NULL,NULL);
     float *cand_cpu = ufo_buffer_get_host_array (cand_buf, NULL);
 
+    GList *cand_list = NULL;
+    UfoRingCoordinate *rings = (UfoRingCoordinate*) cand_cpu; 
+
+    g_message ("number of candidate %d", num_cand);
+
+    for(unsigned i = 0; i < num_cand; i++) {
+        rings[i].r = priv->ring_start + priv->ring_step * rings[i].r;
+        cand_list = g_list_append(cand_list, (gpointer) &rings[i]);
+    }
+
+    // filter candidate neighbours
+    GList *current, *next;
+
+    for (current = cand_list; current->next;) {
+        next = current->next;
+        UfoRingCoordinate *r = (UfoRingCoordinate*) current->data;
+        UfoRingCoordinate *s = (UfoRingCoordinate*) next->data;
+        int t = compare_candidates(r, s);
+        switch (t) {
+            case 0:
+                cand_list = g_list_remove_link(cand_list, current);
+                current = next;
+                break;
+            case 1:
+                cand_list = g_list_remove_link(cand_list, next);
+                break;
+            default:
+                current = next;
+                break;
+        }
+    }
+
+    num_cand = g_list_length(cand_list);
+
+    g_message ("number of candidate %d", num_cand);
+
     req.n_dims = 1;
-    req.dims[0] = 1 + cand_ct * sizeof(UfoRingCoordinate) / sizeof (float);
+    req.dims[0] = 1 + num_cand * sizeof(UfoRingCoordinate) / sizeof (float);
     ufo_buffer_resize(output, &req);
 
     float* res = ufo_buffer_get_host_array(output,NULL);
-    res[0] = cand_ct;
-    UfoRingCoordinate *rings = (UfoRingCoordinate*) &res[1];
-    for(unsigned g = 0; g < cand_ct; g++)
+    res[0] = num_cand;
+    rings = (UfoRingCoordinate*) &res[1];
+
+    UfoRingCoordinate *r;
+    for (unsigned i = 0; i < num_cand; i++) 
     {
-        rings[g].x = cand_cpu[4*g];
-        rings[g].y = cand_cpu[4*g+1];
-        rings[g].r = priv->ring_start + priv->ring_step * cand_cpu[4*g+2];
-        rings[g].contrast = cand_cpu[4*g+3];
-        rings[g].intensity = 0.0f;
+        r = g_list_nth_data (cand_list, i);
+        rings[i] = *r;
     }
 
     g_object_unref (cand_buf);
