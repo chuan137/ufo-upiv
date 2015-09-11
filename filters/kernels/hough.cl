@@ -2,9 +2,10 @@ const sampler_t smp = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | 
 
 kernel void
 likelihood (global float *output, 
-            read_only image2d_t input, 
+            read_only image3d_t input, 
             constant int *mask,
             int maskSizeH, 
+            int mask_num_ones,
             int n,
             local float *local_mem)
 {
@@ -19,7 +20,7 @@ likelihood (global float *output,
     
     unsigned glb_x = get_global_id(0);
     unsigned glb_y = get_global_id(1);
-    const int2 glb_pos = (int2) (glb_x, glb_y);
+    const int4 glb_pos = (int4) (glb_x, glb_y, n, 0);
     
     unsigned loc_x = get_local_id(0);
     unsigned loc_y = get_local_id(1);
@@ -30,72 +31,64 @@ likelihood (global float *output,
 
     if (loc_x < shift) {
         local_tmp_id = (shift + loc_y) * loc_mem_size_x + loc_x;
-        local_mem[local_tmp_id] = read_imagef(input, smp, (int2)(glb_x - shift, glb_y)).x;
+        local_mem[local_tmp_id] = read_imagef(input, smp, (int4)(glb_x - shift, glb_y, n, 0)).x;
     }
 
     if (loc_y < shift) {
         local_tmp_id = loc_y * loc_mem_size_x + (shift + loc_x);
-        local_mem[local_tmp_id] = read_imagef(input, smp, (int2)(glb_x, glb_y - shift)).x;
+        local_mem[local_tmp_id] = read_imagef(input, smp, (int4)(glb_x, glb_y - shift, n, 0)).x;
     }
 
     if (loc_x + shift >= loc_size_x) {
         local_tmp_id = (loc_y + shift) * loc_mem_size_x + (loc_x + 2*shift);
-        local_mem[local_tmp_id] = read_imagef(input, smp, (int2)(glb_x + shift, glb_y)).x;
+        local_mem[local_tmp_id] = read_imagef(input, smp, (int4)(glb_x + shift, glb_y, n, 0)).x;
     }
 
     if (loc_y + shift >= loc_size_y) {
         local_tmp_id = (loc_y + 2*shift) * loc_mem_size_x + (loc_x + shift);
-        local_mem[local_tmp_id] = read_imagef(input, smp, (int2)(glb_x, glb_y + shift)).x;
+        local_mem[local_tmp_id] = read_imagef(input, smp, (int4)(glb_x, glb_y + shift, n, 0)).x;
     }
 
     if (loc_x < shift && loc_y < shift) {
         local_tmp_id = loc_y * loc_mem_size_x + loc_x;
-        local_mem[local_tmp_id] = read_imagef(input, smp, (int2)(glb_x - shift, glb_y-shift)).x;
+        local_mem[local_tmp_id] = read_imagef(input, smp, (int4)(glb_x - shift, glb_y-shift, n, 0)).x;
     }
 
     if (loc_x + shift >= loc_size_x && loc_y < shift) {
         local_tmp_id = loc_y * loc_mem_size_x + (loc_x + 2*shift);
-        local_mem[local_tmp_id] = read_imagef(input, smp, (int2)(glb_x + shift, glb_y - shift)).x;
+        local_mem[local_tmp_id] = read_imagef(input, smp, (int4)(glb_x + shift, glb_y - shift, n, 0)).x;
     }
 
     if (loc_x < shift && loc_y + shift >= loc_size_y) {
         local_tmp_id = (loc_y + 2*shift) * loc_mem_size_x + loc_x;
-        local_mem[local_tmp_id] = read_imagef(input, smp, (int2)(glb_x - shift, glb_y + shift)).x;
+        local_mem[local_tmp_id] = read_imagef(input, smp, (int4)(glb_x - shift, glb_y + shift, n, 0)).x;
     }
 
     if (loc_x + shift >= loc_size_x && loc_y + shift >= loc_size_y) {
         local_tmp_id = (loc_y + 2*shift) * loc_mem_size_x + loc_x + 2*shift;
-        local_mem[local_tmp_id] = read_imagef(input, smp, (int2)(glb_x + shift, glb_y + shift)).x;
+        local_mem[local_tmp_id] = read_imagef(input, smp, (int4)(glb_x + shift, glb_y + shift, n, 0)).x;
     }
 
     barrier(CLK_LOCAL_MEM_FENCE);
 
-    int counter = 0;
-    float f, mean = 0.0f, std = 0.0f;
+    float mean = 0.0f, std = 0.0f, f;
 
     for (int a = -maskSizeH; a < maskSizeH + 1; a++) {
         for (int b = -maskSizeH; b < maskSizeH + 1; b++) {
-            if (mask[a+maskSizeH+(b+maskSizeH)*(maskSizeH*2+1)] == 1) {
-                counter++;
-                local_tmp_id = (loc_y + shift + b) * loc_mem_size_x + (loc_x + shift +a);
-                mean += local_mem[local_tmp_id];
-            }
+            local_tmp_id = (loc_y + shift + b) * loc_mem_size_x + (loc_x + shift +a);
+            mean += local_mem[local_tmp_id] * mask[a+maskSizeH+(b+maskSizeH)*(maskSizeH*2+1)];
         }
     }
-
-    mean = mean / counter;
+    mean = mean / mask_num_ones;
 
     for (int a = -maskSizeH; a < maskSizeH + 1; a++) {
         for (int b = -maskSizeH; b < maskSizeH + 1; b++) {
-            if (mask[a+maskSizeH+(b+maskSizeH)*(maskSizeH*2+1)] == 1) {
-                local_tmp_id = (loc_y + shift + b) * loc_mem_size_x + (loc_x + shift +a);
-                f = local_mem[local_tmp_id];
-                std += (f - mean) * (f -mean);
-            }
+            local_tmp_id = (loc_y + shift + b) * loc_mem_size_x + (loc_x + shift +a);
+            f = local_mem[local_tmp_id];
+            std += (f - mean) * (f -mean) * mask[a+maskSizeH+(b+maskSizeH)*(maskSizeH*2+1)];
         }
     }
-
-    std = sqrt(std/counter);
+    std = sqrt(std / mask_num_ones);
 
     local_tmp_id = (loc_y + shift) * loc_mem_size_x + (loc_x + shift);
     f = local_mem[local_tmp_id];
