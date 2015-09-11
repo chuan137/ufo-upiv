@@ -188,11 +188,12 @@ ufo_hough_likelihood_task_process (UfoTask *task,
     tmp_req.n_dims = 1;
     tmp_req.dims[0] = 1;
     gsize g_work_size[] = { requisition->dims[0], requisition->dims[1] };
+    gsize l_work_size[] = { 32, 32 };
 
     out_mem = ufo_buffer_get_device_array (output, cmd_queue);
     tmp_buf = ufo_buffer_new (&tmp_req, priv->context);
 
-    int number = (requisition->n_dims == 3) ? requisition->dims[2] : 1;
+    guint number = (requisition->n_dims == 3) ? requisition->dims[2] : 1;
     for (guint n = 0; n < number; n++)
     {
         ufo_buffer_copy_region (inputs[0], tmp_buf, n, cmd_queue);
@@ -203,8 +204,9 @@ ufo_hough_likelihood_task_process (UfoTask *task,
         UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 2, sizeof(cl_mem), &priv->mask_mem));
         UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 3, sizeof(int), &priv->masksize_h));
         UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 4, sizeof(guint), &n));
+        UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 5, sizeof(float) * 1936, NULL));
 
-        ufo_profiler_call (profiler, cmd_queue, priv->kernel, 2, g_work_size, NULL);
+        ufo_profiler_call (profiler, cmd_queue, priv->kernel, 2, g_work_size, l_work_size);
     }
 
     g_object_unref(tmp_buf);
