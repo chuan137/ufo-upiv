@@ -5,40 +5,101 @@ likelihood (global float *output,
             read_only image2d_t input, 
             constant int *mask,
             int maskSizeH, 
-            int n)
+            int n,
+            local float *local_mem)
 {
-    const int2 pos = (int2) (get_global_id (0), get_global_id (1));
+    int shift = 6;
 
-    int idx;
-    int count = 0;
-    float f;
-    float mean = 0.0;
-    float std = 0.0;
+    unsigned glb_size_x = get_global_size(0);
+    unsigned glb_size_y = get_global_size(1);
+
+    unsigned loc_size_x = get_local_size(0);
+    unsigned loc_size_y = get_local_size(1);
+    unsigned loc_mem_size_x = loc_size_x + 2 * shift;
+    
+    unsigned glb_x = get_global_id(0);
+    unsigned glb_y = get_global_id(1);
+    const int2 glb_pos = (int2) (glb_x, glb_y);
+    
+    unsigned loc_x = get_local_id(0);
+    unsigned loc_y = get_local_id(1);
+    unsigned local_tmp_id;
+
+    local_tmp_id = (shift + loc_y) * loc_mem_size_x + (shift + loc_x);
+    local_mem[local_tmp_id] = read_imagef(input, smp, glb_pos).x; 
+
+    if (loc_x < shift) {
+        local_tmp_id = (shift + loc_y) * loc_mem_size_x + loc_x;
+        local_mem[local_tmp_id] = read_imagef(input, smp, (int2)(glb_x - shift, glb_y)).x;
+    }
+
+    if (loc_y < shift) {
+        local_tmp_id = loc_y * loc_mem_size_x + (shift + loc_x);
+        local_mem[local_tmp_id] = read_imagef(input, smp, (int2)(glb_x, glb_y - shift)).x;
+    }
+
+    if (loc_x + shift >= loc_size_x) {
+        local_tmp_id = (loc_y + shift) * loc_mem_size_x + (loc_x + 2*shift);
+        local_mem[local_tmp_id] = read_imagef(input, smp, (int2)(glb_x + shift, glb_y)).x;
+    }
+
+    if (loc_y + shift >= loc_size_y) {
+        local_tmp_id = (loc_y + 2*shift) * loc_mem_size_x + (loc_x + shift);
+        local_mem[local_tmp_id] = read_imagef(input, smp, (int2)(glb_x, glb_y + shift)).x;
+    }
+
+    if (loc_x < shift && loc_y < shift) {
+        local_tmp_id = loc_y * loc_mem_size_x + loc_x;
+        local_mem[local_tmp_id] = read_imagef(input, smp, (int2)(glb_x - shift, glb_y-shift)).x;
+    }
+
+    if (loc_x + shift >= loc_size_x && loc_y < shift) {
+        local_tmp_id = loc_y * loc_mem_size_x + (loc_x + 2*shift);
+        local_mem[local_tmp_id] = read_imagef(input, smp, (int2)(glb_x + shift, glb_y - shift)).x;
+    }
+
+    if (loc_x < shift && loc_y + shift >= loc_size_y) {
+        local_tmp_id = (loc_y + 2*shift) * loc_mem_size_x + loc_x;
+        local_mem[local_tmp_id] = read_imagef(input, smp, (int2)(glb_x - shift, glb_y + shift)).x;
+    }
+
+    if (loc_x + shift >= loc_size_x && loc_y + shift >= loc_size_y) {
+        local_tmp_id = (loc_y + 2*shift) * loc_mem_size_x + loc_x + 2*shift;
+        local_mem[local_tmp_id] = read_imagef(input, smp, (int2)(glb_x + shift, glb_y + shift)).x;
+    }
+
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    int counter = 0;
+    float f, mean = 0.0f, std = 0.0f;
 
     for (int a = -maskSizeH; a < maskSizeH + 1; a++) {
         for (int b = -maskSizeH; b < maskSizeH + 1; b++) {
             if (mask[a+maskSizeH+(b+maskSizeH)*(maskSizeH*2+1)] == 1) {
-                count++;
-                mean += read_imagef(input, smp, pos + (int2)(a,b)).x;
+                counter++;
+                local_tmp_id = (loc_y + shift + b) * loc_mem_size_x + (loc_x + shift +a);
+                mean += local_mem[local_tmp_id];
             }
         }
     }
 
-    mean /= count;
+    mean = mean / counter;
 
     for (int a = -maskSizeH; a < maskSizeH + 1; a++) {
         for (int b = -maskSizeH; b < maskSizeH + 1; b++) {
             if (mask[a+maskSizeH+(b+maskSizeH)*(maskSizeH*2+1)] == 1) {
-                f = read_imagef(input, smp, pos + (int2)(a,b)).x;
-                std += (f - mean) * (f - mean);
+                local_tmp_id = (loc_y + shift + b) * loc_mem_size_x + (loc_x + shift +a);
+                f = local_mem[local_tmp_id];
+                std += (f - mean) * (f -mean);
             }
         }
     }
 
-    std = sqrt(std/count);
- 
-    f = read_imagef(input, smp, pos).x;
-    idx = pos.x + pos.y*get_global_size(0) + n*get_global_size(0)*get_global_size(1);
+    std = sqrt(std/counter);
+
+    local_tmp_id = (loc_y + shift) * loc_mem_size_x + (loc_x + shift);
+    f = local_mem[local_tmp_id];
+    unsigned idx = glb_pos.x + glb_pos.y*get_global_size(0) + n*get_global_size(0)*get_global_size(1);
     output[idx] = exp((f - mean)/std);
 }
 
