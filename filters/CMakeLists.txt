@@ -7,6 +7,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 find_package(OpenCL REQUIRED)
 find_package(PkgConfig REQUIRED)
+find_package(GSL REQUIRED)
 find_package(OCLFFT)
 
 #{{{ Dependencies
