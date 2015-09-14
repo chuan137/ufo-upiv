@@ -202,6 +202,7 @@ ufo_azimuthal_test_task_process (UfoTask *task,
                          UfoRequisition *requisition)
 {
     UfoAzimuthalTestTaskPrivate *priv = UFO_AZIMUTHAL_TEST_TASK_GET_PRIVATE (task);
+    GTimer *timer = g_timer_new();
 
     float *in_cpu = ufo_buffer_get_host_array (inputs[1], NULL);
     guint num_cand = (guint) in_cpu[0];
@@ -219,6 +220,8 @@ ufo_azimuthal_test_task_process (UfoTask *task,
     f.fdf = &gaussian_fdf;
     f.p = 3;
 
+    float t1=0.0, t2=0.0;
+
     for (unsigned i = 0; i < num_cand; i++) {
         int min_r = cand[i].r - priv->radii_range;
         int max_r = cand[i].r + priv->radii_range;
@@ -234,21 +237,24 @@ ufo_azimuthal_test_task_process (UfoTask *task,
         s = gsl_multifit_fdfsolver_alloc (T, max_r - min_r + 1, 3);
         f.n = max_r - min_r + 1;
 
-        /*for (int j = -priv->displacement; j < priv->displacement + 1; j++)*/
-        /*for (int k = -priv->displacement; k < priv->displacement + 1; k++)*/
-        for (int j = -2; j < 3; j++)
-        for (int k = -2; k < 3; k++)
+
+        for (int j = - (int) priv->displacement; j < (int) priv->displacement + 1; j++)
+        for (int k = - (int) priv->displacement; k < (int) priv->displacement + 1; k++)
         {
             UfoRingCoordinate ring = {cand[i].x + j, cand[i].y + k, cand[i].r, 0.0, 0.0};
+
+            g_timer_start(timer);
             for (int r = min_r; r <= max_r; ++r) {
                 histogram[r-min_r] = compute_intensity(inputs[0], &ring, r);
             }
+            t1 += g_timer_elapsed(timer, NULL);
 
             struct fitting_data d = {max_r - min_r + 1, histogram};
             f.params = &d;
             gsl_multifit_fdfsolver_set(s, &f, &x.vector);
             int iter = 0;
 
+            g_timer_start(timer);
             do {
                 iter++;
                 status = gsl_multifit_fdfsolver_iterate (s);
@@ -256,6 +262,7 @@ ufo_azimuthal_test_task_process (UfoTask *task,
 
                 status = gsl_multifit_test_delta (s->dx, s->x, 1e-4, 1e-4);
             } while (status == GSL_CONTINUE && iter < 50);
+            t2 += g_timer_elapsed(timer, NULL);
 
             g_message(
                 "histogram = %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f",
@@ -272,6 +279,10 @@ ufo_azimuthal_test_task_process (UfoTask *task,
     }
 
     g_message ("process");
+    g_message ("compute_intensity = %f", t1); 
+    g_message ("fitting = %f", t2); 
+
+    g_timer_destroy(timer);
     return TRUE;
 }
 
