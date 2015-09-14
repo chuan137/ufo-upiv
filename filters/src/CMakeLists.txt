@@ -23,6 +23,7 @@ set(ufofilter_SRCS
     ufo-candidate-sorting-task.c
     ufo-multi-search-task.c
     ufo-device-info-task.c
+    ufo-azimuthal-test-task.c
     )
 
 #}}}
