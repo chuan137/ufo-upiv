@@ -137,6 +137,9 @@ compute_intensity (UfoBuffer *ufo_image, UfoRingCoordinate *center, int r)
         }
     }
 
+    /*return intensity;*/
+
+    
     if(counter != 0)
         return intensity / (float) counter;
     else    
@@ -159,10 +162,36 @@ static int gaussian_f (const gsl_vector *x, void *data, gsl_vector *f)
 
     for (size_t i = 0; i < n; i++)
     {
-        double Yi = A * exp ( - (i - mu) * (i - mu) / (2.0f * sig * sig));
+        float Yi = A * exp ( - (i - mu) * (i - mu) / (2.0f * sig * sig));
         gsl_vector_set (f, i, Yi - y[i]);
     }
 
+    return GSL_SUCCESS;
+}
+
+static int gaussian_df (const gsl_vector *x, void *data, gsl_matrix *J)
+{
+    size_t n = ((struct fitting_data *) data)->n;
+
+    float A = gsl_vector_get(x, 0);
+    float mu = gsl_vector_get(x, 1);
+    float sig = gsl_vector_get(x, 2);
+
+    for (size_t i = 0; i < n; i++)
+    {
+        double t = i;
+        double e = exp ( - (t - mu)*(t - mu) / (2.0f*sig*sig) );
+        gsl_matrix_set (J, i, 0, e);
+        gsl_matrix_set (J, i, 1, A * e * (t-mu) / (sig*sig) );
+        gsl_matrix_set (J, i, 2, A * e * (t-mu)*(t-mu) / (sig*sig*sig) );
+    }
+    return GSL_SUCCESS;
+}
+
+static int gaussian_fdf (const gsl_vector *x, void *data, gsl_vector *f, gsl_matrix *J)
+{
+    gaussian_f (x, data, f);
+    gaussian_df (x, data, J);
     return GSL_SUCCESS;
 }
 
@@ -186,37 +215,34 @@ ufo_azimuthal_test_task_process (UfoTask *task,
     int status;
 
     f.f = &gaussian_f;
-    f.df = NULL;
-    f.fdf = NULL;
+    f.df = &gaussian_df;
+    f.fdf = &gaussian_fdf;
     f.p = 3;
-
-    g_message ("num_cand = %d", num_cand);
 
     for (unsigned i = 0; i < num_cand; i++) {
         int min_r = cand[i].r - priv->radii_range;
         int max_r = cand[i].r + priv->radii_range;
         min_r = (min_r < 1) ? 1 : min_r;
 
+        g_message ("************");
+        g_message("ring %d %d %d", (int)cand[i].x, (int)cand[i].y, (int)cand[i].r);
+
         float histogram[max_r - min_r + 1];
 
-        double x_init[] = {10, cand->r, 2};
+        double x_init[] = {10, cand[i].r, 2};
         gsl_vector_view x = gsl_vector_view_array (x_init, 3);
         s = gsl_multifit_fdfsolver_alloc (T, max_r - min_r + 1, 3);
         f.n = max_r - min_r + 1;
-
-        g_message ("priv->displacement = %d", priv->displacement);
 
         /*for (int j = -priv->displacement; j < priv->displacement + 1; j++)*/
         /*for (int k = -priv->displacement; k < priv->displacement + 1; k++)*/
         for (int j = -2; j < 3; j++)
         for (int k = -2; k < 3; k++)
         {
-            UfoRingCoordinate ring = {cand->x + j, cand->y + k, cand->r, 0.0, 0.0};
+            UfoRingCoordinate ring = {cand[i].x + j, cand[i].y + k, cand[i].r, 0.0, 0.0};
             for (int r = min_r; r <= max_r; ++r) {
-                histogram[r] = compute_intensity(inputs[0], &ring, r);
+                histogram[r-min_r] = compute_intensity(inputs[0], &ring, r);
             }
-
-            g_message ("************");
 
             struct fitting_data d = {max_r - min_r + 1, histogram};
             f.params = &d;
@@ -226,17 +252,22 @@ ufo_azimuthal_test_task_process (UfoTask *task,
             do {
                 iter++;
                 status = gsl_multifit_fdfsolver_iterate (s);
-                g_message("status = %d", status);
-                g_message("status = %s", gsl_strerror (status));
                 if (status) break;
 
                 status = gsl_multifit_test_delta (s->dx, s->x, 1e-4, 1e-4);
             } while (status == GSL_CONTINUE && iter < 50);
 
+            g_message(
+                "histogram = %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f",
+                histogram[0], histogram[1], histogram[2], histogram[3], histogram[4], 
+                histogram[5], histogram[6], histogram[7], histogram[8], histogram[9]); 
+
+            g_message ("iter = %d", iter);
+            g_message ("min_r = %d", min_r);
             g_message ("A   = %.5f", gsl_vector_get(s->x, 0));
             g_message ("mu  = %.5f", gsl_vector_get(s->x, 1));
-            g_message ("sig = %.5f", gsl_vector_get(s->x, 2));
-            g_message ("iter = %d", iter);
+            g_message ("sig = %.5f", fabs(gsl_vector_get(s->x, 2)));
+            g_message ("x = %d y = %d A/sig = %.5f", (int)ring.x, (int)ring.y, gsl_vector_get(s->x, 0) / fabs(gsl_vector_get(s->x, 2)));
         }
     }
 
@@ -322,5 +353,5 @@ ufo_azimuthal_test_task_init(UfoAzimuthalTestTask *self)
 {
     self->priv = UFO_AZIMUTHAL_TEST_TASK_GET_PRIVATE(self);
     self->priv->radii_range = 5;
-    self->priv->displacement = 2;
+    self->priv->displacement = 1;
 }
