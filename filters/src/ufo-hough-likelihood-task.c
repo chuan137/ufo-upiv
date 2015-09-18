@@ -77,6 +77,8 @@ ufo_hough_likelihood_task_setup (UfoTask *task,
 
     if (priv->kernel)
         UFO_RESOURCES_CHECK_CLERR(clRetainKernel(priv->kernel));
+    if (priv->context)
+        UFO_RESOURCES_CHECK_CLERR(clRetainContext(priv->context));
 
     mask = g_malloc0 (priv->masksize * priv->masksize * sizeof (int));
     priv->masksize_h = (priv->masksize - 1) / 2;
@@ -152,26 +154,23 @@ ufo_hough_likelihood_task_process (UfoTask *task,
     profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
     cmd_queue = ufo_gpu_node_get_cmd_queue (node);
 
-    gsize g_work_size[] = { requisition->dims[0], requisition->dims[1] };
-    gsize l_work_size[] = { 32, 16 };
+    gsize g_work_size[] = { requisition->dims[0], requisition->dims[1] , requisition->dims[2]};
+    gsize l_work_size[] = { 32, 16, 1};
+
     gsize shift = 6;
+    gsize l_mem_size = sizeof(float) * (2*shift + l_work_size[0]) * (2*shift + l_work_size[1]);
 
     cl_mem in_img = ufo_buffer_get_device_image (inputs[0], cmd_queue);
     cl_mem out_mem = ufo_buffer_get_device_array (output, cmd_queue);
-    guint number = (requisition->n_dims == 3) ? requisition->dims[2] : 1;
 
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 0, sizeof(cl_mem), &out_mem));
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 1, sizeof(cl_mem), &in_img));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 0, sizeof(cl_mem), &in_img));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 1, sizeof(cl_mem), &out_mem));
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 2, sizeof(cl_mem), &priv->mask_mem));
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 3, sizeof(int), &priv->masksize_h));
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 4, sizeof(int), &priv->mask_num_ones));
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 6, sizeof(float) * (2*shift+l_work_size[0]) * (2*shift + l_work_size[1]), NULL));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 5, l_mem_size, NULL));
 
-    for (guint n = 0; n < number; n++)
-    {
-        UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 5, sizeof(guint), &n));
-        ufo_profiler_call (profiler, cmd_queue, priv->kernel, 2, g_work_size, l_work_size);
-    }
+    ufo_profiler_call (profiler, cmd_queue, priv->kernel, 3, g_work_size, l_work_size);
 
     return TRUE;
 }
