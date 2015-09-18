@@ -43,7 +43,7 @@ class PivJob(PivJob):
         self.add_task('ifft', dimensions=2)
         self.add_task('likelihood', 'hough-likelihood', 
                 masksize=p.likelihoodmask, maskinnersize=p.likelihoodmaskinner)
-        self.add_task('cand', 'candidate-sorting', 
+        self.add_task('cand', 'candidate-filter', 
                 threshold=p.candi_threshold, ring_start=p.ring_start, 
                 ring_step=p.ring_step, ring_end=p.ring_end )
         self.add_task('azimu', 'multi-search')

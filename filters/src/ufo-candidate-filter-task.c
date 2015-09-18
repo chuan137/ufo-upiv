@@ -17,19 +17,19 @@
  * License along with this library.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "ufo-candidate-sorting-task.h"
-#include "ufo-ring-coordinates.h"
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #ifdef __APPLE__
 #include <OpenCL/cl.h>
 #else
 #include <CL/cl.h>
 #endif
 
+#include "ufo-candidate-filter-task.h"
+#include "ufo-ring-coordinates.h"
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
-struct _UfoCandidateSortingTaskPrivate {
+struct _UfoCandidateFilterTaskPrivate {
     cl_kernel found_cand;
     cl_context context;
     guint ring_start;
@@ -41,11 +41,11 @@ struct _UfoCandidateSortingTaskPrivate {
 
 static void ufo_task_interface_init (UfoTaskIface *iface);
 
-G_DEFINE_TYPE_WITH_CODE (UfoCandidateSortingTask, ufo_candidate_sorting_task, UFO_TYPE_TASK_NODE,
+G_DEFINE_TYPE_WITH_CODE (UfoCandidateFilterTask, ufo_candidate_filter_task, UFO_TYPE_TASK_NODE,
                          G_IMPLEMENT_INTERFACE (UFO_TYPE_TASK,
                                                 ufo_task_interface_init))
 
-#define UFO_CANDIDATE_SORTING_TASK_GET_PRIVATE(obj) (G_TYPE_INSTANCE_GET_PRIVATE((obj), UFO_TYPE_CANDIDATE_SORTING_TASK, UfoCandidateSortingTaskPrivate))
+#define UFO_CANDIDATE_FILTER_TASK_GET_PRIVATE(obj) (G_TYPE_INSTANCE_GET_PRIVATE((obj), UFO_TYPE_CANDIDATE_FILTER_TASK, UfoCandidateFilterTaskPrivate))
 
 enum {
     PROP_0,
@@ -59,17 +59,17 @@ enum {
 static GParamSpec *properties[N_PROPERTIES] = { NULL, };
 
 UfoNode *
-ufo_candidate_sorting_task_new (void)
+ufo_candidate_filter_task_new (void)
 {
-    return UFO_NODE (g_object_new (UFO_TYPE_CANDIDATE_SORTING_TASK, NULL));
+    return UFO_NODE (g_object_new (UFO_TYPE_CANDIDATE_FILTER_TASK, NULL));
 }
 
 static void
-ufo_candidate_sorting_task_setup (UfoTask *task,
+ufo_candidate_filter_task_setup (UfoTask *task,
                        UfoResources *resources,
                        GError **error)
 {
-    UfoCandidateSortingTaskPrivate *priv = UFO_CANDIDATE_SORTING_TASK_GET_PRIVATE(task);
+    UfoCandidateFilterTaskPrivate *priv = UFO_CANDIDATE_FILTER_TASK_GET_PRIVATE(task);
     
     priv->found_cand = ufo_resources_get_kernel(resources, "found_cand.cl", NULL, error);
 
@@ -80,7 +80,7 @@ ufo_candidate_sorting_task_setup (UfoTask *task,
 }
 
 static void
-ufo_candidate_sorting_task_get_requisition (UfoTask *task,
+ufo_candidate_filter_task_get_requisition (UfoTask *task,
                                  UfoBuffer **inputs,
                                  UfoRequisition *requisition)
 {
@@ -89,20 +89,20 @@ ufo_candidate_sorting_task_get_requisition (UfoTask *task,
 }
 
 static guint
-ufo_candidate_sorting_task_get_num_inputs (UfoTask *task)
+ufo_candidate_filter_task_get_num_inputs (UfoTask *task)
 {
     return 1;
 }
 
 static guint
-ufo_candidate_sorting_task_get_num_dimensions (UfoTask *task,
+ufo_candidate_filter_task_get_num_dimensions (UfoTask *task,
                                              guint input)
 {
     return -1;
 }
 
 static UfoTaskMode
-ufo_candidate_sorting_task_get_mode (UfoTask *task)
+ufo_candidate_filter_task_get_mode (UfoTask *task)
 {
     return UFO_TASK_MODE_PROCESSOR | UFO_TASK_MODE_GPU;
 }
@@ -119,12 +119,12 @@ static int compare_candidates(UfoRingCoordinate *a, UfoRingCoordinate *b)
 }
 
 static gboolean
-ufo_candidate_sorting_task_process (UfoTask *task,
+ufo_candidate_filter_task_process (UfoTask *task,
                          UfoBuffer **inputs,
                          UfoBuffer *output,
                          UfoRequisition *requisition)
 {
-    UfoCandidateSortingTaskPrivate *priv;
+    UfoCandidateFilterTaskPrivate *priv;
     UfoGpuNode  *node;   
     UfoProfiler *profiler;
     UfoRequisition req;    
@@ -132,7 +132,7 @@ ufo_candidate_sorting_task_process (UfoTask *task,
     cl_int error;
     int max_cand = 500;
 
-    priv = UFO_CANDIDATE_SORTING_TASK_GET_PRIVATE (task);
+    priv = UFO_CANDIDATE_FILTER_TASK_GET_PRIVATE (task);
     node = UFO_GPU_NODE (ufo_task_node_get_proc_node (UFO_TASK_NODE (task)));
     cmd_queue = ufo_gpu_node_get_cmd_queue (node);
     profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
@@ -226,12 +226,12 @@ ufo_candidate_sorting_task_process (UfoTask *task,
 }
 
 static void
-ufo_candidate_sorting_task_set_property (GObject *object,
+ufo_candidate_filter_task_set_property (GObject *object,
                               guint property_id,
                               const GValue *value,
                               GParamSpec *pspec)
 {
-    UfoCandidateSortingTaskPrivate *priv = UFO_CANDIDATE_SORTING_TASK_GET_PRIVATE (object);
+    UfoCandidateFilterTaskPrivate *priv = UFO_CANDIDATE_FILTER_TASK_GET_PRIVATE (object);
 
     switch (property_id) {
         case PROP_RING_START:
@@ -254,12 +254,12 @@ ufo_candidate_sorting_task_set_property (GObject *object,
 }
 
 static void
-ufo_candidate_sorting_task_get_property (GObject *object,
+ufo_candidate_filter_task_get_property (GObject *object,
                               guint property_id,
                               GValue *value,
                               GParamSpec *pspec)
 {
-    UfoCandidateSortingTaskPrivate *priv = UFO_CANDIDATE_SORTING_TASK_GET_PRIVATE (object);
+    UfoCandidateFilterTaskPrivate *priv = UFO_CANDIDATE_FILTER_TASK_GET_PRIVATE (object);
 
     switch (property_id) {
         case PROP_RING_START:
@@ -281,35 +281,35 @@ ufo_candidate_sorting_task_get_property (GObject *object,
 }
 
 static void
-ufo_candidate_sorting_task_finalize (GObject *object)
+ufo_candidate_filter_task_finalize (GObject *object)
 {
-    UfoCandidateSortingTaskPrivate *priv = UFO_CANDIDATE_SORTING_TASK_GET_PRIVATE (object);
+    UfoCandidateFilterTaskPrivate *priv = UFO_CANDIDATE_FILTER_TASK_GET_PRIVATE (object);
 
     if(priv->found_cand)
         UFO_RESOURCES_CHECK_CLERR(clReleaseKernel(priv->found_cand));
     
-    G_OBJECT_CLASS (ufo_candidate_sorting_task_parent_class)->finalize (object);
+    G_OBJECT_CLASS (ufo_candidate_filter_task_parent_class)->finalize (object);
 }
 
 static void
 ufo_task_interface_init (UfoTaskIface *iface)
 {
-    iface->setup = ufo_candidate_sorting_task_setup;
-    iface->get_num_inputs = ufo_candidate_sorting_task_get_num_inputs;
-    iface->get_num_dimensions = ufo_candidate_sorting_task_get_num_dimensions;
-    iface->get_mode = ufo_candidate_sorting_task_get_mode;
-    iface->get_requisition = ufo_candidate_sorting_task_get_requisition;
-    iface->process = ufo_candidate_sorting_task_process;
+    iface->setup = ufo_candidate_filter_task_setup;
+    iface->get_num_inputs = ufo_candidate_filter_task_get_num_inputs;
+    iface->get_num_dimensions = ufo_candidate_filter_task_get_num_dimensions;
+    iface->get_mode = ufo_candidate_filter_task_get_mode;
+    iface->get_requisition = ufo_candidate_filter_task_get_requisition;
+    iface->process = ufo_candidate_filter_task_process;
 }
 
 static void
-ufo_candidate_sorting_task_class_init (UfoCandidateSortingTaskClass *klass)
+ufo_candidate_filter_task_class_init (UfoCandidateFilterTaskClass *klass)
 {
     GObjectClass *oclass = G_OBJECT_CLASS (klass);
 
-    oclass->set_property = ufo_candidate_sorting_task_set_property;
-    oclass->get_property = ufo_candidate_sorting_task_get_property;
-    oclass->finalize = ufo_candidate_sorting_task_finalize;
+    oclass->set_property = ufo_candidate_filter_task_set_property;
+    oclass->get_property = ufo_candidate_filter_task_get_property;
+    oclass->finalize = ufo_candidate_filter_task_finalize;
 
     properties[PROP_RING_START] = 
         g_param_spec_uint ("ring_start",
@@ -338,13 +338,13 @@ ufo_candidate_sorting_task_class_init (UfoCandidateSortingTaskClass *klass)
     for (guint i = PROP_0 + 1; i < N_PROPERTIES; i++)
         g_object_class_install_property (oclass, i, properties[i]);
 
-    g_type_class_add_private (oclass, sizeof(UfoCandidateSortingTaskPrivate));
+    g_type_class_add_private (oclass, sizeof(UfoCandidateFilterTaskPrivate));
 }
 
 static void
-ufo_candidate_sorting_task_init(UfoCandidateSortingTask *self)
+ufo_candidate_filter_task_init(UfoCandidateFilterTask *self)
 {
-    self->priv = UFO_CANDIDATE_SORTING_TASK_GET_PRIVATE(self);
+    self->priv = UFO_CANDIDATE_FILTER_TASK_GET_PRIVATE(self);
     self->priv->ring_start = 5;
     self->priv->ring_end = 5;
     self->priv->ring_step = 2;
