@@ -51,10 +51,11 @@ class PivJob(PivJob):
     def setup_graph(self, flag):
         b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'bc_contrast', 'input_fft')
         b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')
-        b3 = self.branch('ring_convolution', 'ifft', 'likelihood', 'null') 
-        #b3 = self.branch('ring_convolution', 'ifft', 'likelihood', 'cand', 'ring_writer')
-        self.graph.merge_branch(b1, b2, b3)
-
+        b3 = self.branch('bc_contrast')
+        b4 = self.branch('ring_convolution', 'ifft', 'likelihood', 'cand')
+        b5 = self.branch('azimu', 'ring_writer')
+        self.graph.merge_branch(b1, b2, b4)
+        self.graph.merge_branch(b3, b4, b5)
 
 j = PivJob(parms)
 j.profiling = config.get('profiling') or False
