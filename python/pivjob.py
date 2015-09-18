@@ -37,30 +37,20 @@ class PivJob(UfoJob):
 
     def setup_basic_tasks(self):
         p  = self.parms
+
+        self.add_task('read', path=p.in_path, number=p.number, start=p.start)
+        self.add_task('write', filename=p.out_file)
+        self.add_task('ring_writer')
+        self.add_task('m1', 'monitor')
+        self.add_task('m2', 'monitor')
+        self.add_task('m3', 'monitor')
+        self.add_task('m4', 'monitor')
+        self.add_task('m5', 'monitor')
+        self.add_task('m6', 'monitor')
+        self.add_task('m7', 'monitor')
+        self.add_task('null')
+
         sc = self.parms.scale
-
-        self.add_task('crop', x=p.xshift, y=p.yshift, width=p.width, height=p.height)
-        self.add_task('contrast', 'piv_contrast')
-        self.add_task('rescale', factor=1.0/sc)
-        self.add_task('input_fft', 'fft', dimensions=2)
-
-        self.add_task('ring_fft', 'fft', dimensions=2)
-        self.add_task('ring_stack', 'stack', number=p.ring_number)
-        self.add_task('ring_loop', 'loop', count=p.number)
-        self.add_task('ring_convolution', 'complex_mult')
-        self.add_task('ring_slice', 'slice')
-        self.add_task('ring_pattern', 
-                  start=p.ring_start/sc, end=p.ring_end/sc, step=p.ring_step/sc, 
-                  thickness=p.ring_thickness/sc, method=p.ring_method, 
-                  width=p.width/sc, height=p.height/sc)
-
-        self.add_task('ifft', dimensions=2)
-        self.add_task('likelihood', 'hough-likelihood', 
-                masksize=p.likelihoodmask, maskinnersize=p.likelihoodmaskinner)
-        self.add_task('cand', 'candidate-sorting', threshold=p.candi_threshold,
-                ring_start=p.ring_start, ring_step=p.ring_step, ring_end=p.ring_end )
-        self.add_task('azimu', 'multi-search')
-        self.add_copy_task('bc_contrast') 
 
         self.add_task('hessian_kernel', sigma=2.0/sc, width=1024/sc, height=1024/sc)
         self.add_task('hessian_fft', 'fft', dimensions=2)
@@ -74,27 +64,12 @@ class PivJob(UfoJob):
         self.add_task('combine_test', 'combine-test')
         self.add_task('blob_test', alpha=p.blob_alpha)
         self.add_task('sum')
-        self.add_task('ring_writer')
-        p = self.parms
-        scale = p.scale
-
-        self.add_task('read', path=p.in_path, number=p.number, start=p.start)
-        self.add_task('write', filename=p.out_file)
 
         self.add_task('stack1', 'stack', number=p.ring_number)
         self.add_task('stack2', 'stack', number=p.ring_number)
         self.add_task('stack3', 'stack', number=p.ring_number)
         self.add_task('unstack1', 'slice')
         self.add_task('unstack2', 'slice')
-
-        self.add_task('m1', 'monitor')
-        self.add_task('m2', 'monitor')
-        self.add_task('m3', 'monitor')
-        self.add_task('m4', 'monitor')
-        self.add_task('m5', 'monitor')
-        self.add_task('m6', 'monitor')
-        self.add_task('m7', 'monitor')
-        self.add_task('null')
 
     def setup_tasks(self):
         pass
