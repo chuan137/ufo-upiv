@@ -99,8 +99,8 @@ ufo_ring_writer_task_process (UfoTask *task,
                 rings[i].x,
                 rings[i].y,
                 rings[i].r,
-                rings[i].intensity,
-                rings[i].contrast );
+                rings[i].contrast,
+                rings[i].intensity);
     }
 
     return TRUE;
