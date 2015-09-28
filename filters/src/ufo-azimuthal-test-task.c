@@ -203,8 +203,6 @@ typedef struct _gaussian_thread_data{
    
     UfoAzimuthalTestTaskPrivate *priv;
     UfoRingCoordinate* ring;
-    UfoRingCoordinate* p_ring;
-    UfoRingCoordinate* n_ring;
     UfoBuffer* ufo_image;
    
     short* binary_pic; //Matrix of done pixels
@@ -218,26 +216,12 @@ typedef struct _gaussian_thread_data{
     
 } gaussian_thread_data;
 
-
-static int compare_candidates(UfoRingCoordinate* a, UfoRingCoordinate *b)
-{
-    if (abs(a->x - b->x) < 3 && abs(a->y - b->y) < 3) {  
-          if (a->contrast > b->contrast)
-            return 0;
-    }
-    else{
-        return 1;
-    }
-}
-
 static void gaussian_thread(gpointer data, gpointer user_data)
 {
     
     //Thread copying
     gaussian_thread_data *parm = (gaussian_thread_data*) data;
     UfoRingCoordinate* ring = (UfoRingCoordinate*) parm->ring;
-    UfoRingCoordinate* p_ring = (UfoRingCoordinate*) parm->p_ring;
-    UfoRingCoordinate* n_ring = (UfoRingCoordinate*) parm->n_ring;
     short* tmp_pic = (short*) parm->binary_pic;
     UfoAzimuthalTestTaskPrivate* priv = (UfoAzimuthalTestTaskPrivate*) parm->priv;
 
@@ -274,18 +258,8 @@ static void gaussian_thread(gpointer data, gpointer user_data)
         if(tmp_pic[pos] == 1){
            breaker = 1;
         } 
-        if(p_ring != NULL){
-            if(compare_candidates(ring,p_ring) == 0)
-            //     continue;
-            breaker = 1;
-        }
-        if(n_ring != NULL){
-            if(compare_candidates(ring,n_ring) == 0)
-            breaker = 1;
-        }
 
-        if(breaker != 1)
-        {
+        if(breaker != 1){
             tmp_pic[pos] = 1;
         }
 
@@ -321,6 +295,7 @@ static void gaussian_thread(gpointer data, gpointer user_data)
                 parm->winner->x = (int) ring->x;
                 parm->winner->y = (int) ring->y;
                 parm->winner->r = (int) ring->r;
+                parm->winner->intensity = tmp_s;
             }
         }
 
@@ -338,11 +313,13 @@ ufo_azimuthal_test_task_process (UfoTask *task,
     float *in_cpu = ufo_buffer_get_host_array (inputs[1], NULL);
     guint num_cand = (guint) in_cpu[0];
     UfoRingCoordinate *cand = (UfoRingCoordinate*) &in_cpu[1];
-    int x_len = 512;
-    int y_len = 512;
 
+    UfoRequisition req;
+    ufo_buffer_get_requisition(inputs[0],&req);
+
+    int x_len = req.dims[0];
+    int y_len = req.dims[1];
     short* tmp_pic = g_malloc0(sizeof(short) * x_len *y_len);
-
     GThreadPool *thread_pool = NULL;
     gaussian_thread_data thread_data[num_cand];
     UfoRingCoordinate results[num_cand];
@@ -356,26 +333,21 @@ ufo_azimuthal_test_task_process (UfoTask *task,
         thread_data[i].tid = i;
         thread_data[i].priv = priv; 
         thread_data[i].ring = &cand[i];
- 
-        if(i > 0)
-            thread_data[i].p_ring = &cand[i - 1];
-        else
-            thread_data[i].p_ring = NULL;
-
-        if(i < num_cand - 1)
-            thread_data[i].n_ring = &cand[i +1];
-        else   
-            thread_data[i].n_ring = NULL;
-
         thread_data[i].ufo_image = inputs[0];
         thread_data[i].binary_pic = tmp_pic;
         thread_data[i].x_len = x_len;
         thread_data[i].y_len = y_len;
         thread_data[i].winner = &results[i];
-       thread_data[i].mutex = &mutex; 
+        thread_data[i].mutex = &mutex; 
         
         g_thread_pool_push(thread_pool, &thread_data[i],&err); 
     }
+
+    float *res = ufo_buffer_get_host_array(output,NULL);
+    res[0] = num_cand;
+    
+    UfoRingCoordinate *rings = (UfoRingCoordinate*) &res[1];
+    rings = results;
 
     g_thread_pool_free(thread_pool,FALSE,TRUE);
     g_free(tmp_pic);
