@@ -296,6 +296,7 @@ static void gaussian_thread(gpointer data, gpointer user_data)
                 parm->winner->y = (int) ring->y;
                 parm->winner->r = (int) ring->r;
                 parm->winner->intensity = tmp_A;
+                parm->winner->contrast = ring->contrast;
             }
         }
 
