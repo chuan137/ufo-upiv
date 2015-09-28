@@ -1,6 +1,6 @@
 __kernel void found_cand(__global float* input, 
-                         __global float* positions, 
-                         __global unsigned* counter, 
+                         __global float* output, 
+                         __global int *counter,
                          __const float thredshold,
                          __const unsigned n)
 {
@@ -8,16 +8,16 @@ __kernel void found_cand(__global float* input,
     int y = get_global_id(1); //second dimension
     int w = get_global_size(0); //width
     int s = get_global_size(1) * w;
-
+    
     int idx = x + y*w + n*s; //get real position
     int old;
     if(input[idx] > thredshold)
     {
-        old = atomic_inc(&counter[0]);
-        positions[5*old] = (float)x; //save x coordinate
-        positions[5*old + 1] = (float)y; //save y coordinate
-        positions[5*old + 2] = n;
-        positions[5*old + 3] = input[idx];
-        positions[5*old + 4] = 0.0f;
+        old = atomic_inc(counter);
+        output[5*old + 0] = (float)x; //save x coordinate
+        output[5*old + 1] = (float)y; //save y coordinate
+        output[5*old + 2] = (float)n;
+        output[5*old + 3] = input[idx];
+        output[5*old + 4] = (float)1;
     }
 }
