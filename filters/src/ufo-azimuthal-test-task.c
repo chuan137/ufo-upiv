@@ -255,8 +255,8 @@ static void gaussian_thread(gpointer data, gpointer user_data)
         int breaker = 0; 
 
         int pos = (int) ring->x + k + (ring->y + j)* parm->x_len;
+        /*
         g_mutex_lock(parm->mutex); 
-   
         if(tmp_pic[pos] == 1){
             breaker = 1;
         }
@@ -264,10 +264,9 @@ static void gaussian_thread(gpointer data, gpointer user_data)
            tmp_pic[pos] = 1;
         }
         g_mutex_unlock(parm->mutex);
-   
+  */ 
         if(breaker == 1)
             continue;
-
         for(int r = min_r; r <= max_r; ++r){
             histogram[r - min_r] = compute_intensity(parm->ufo_image,ring,r);
         }
@@ -288,8 +287,7 @@ static void gaussian_thread(gpointer data, gpointer user_data)
             
         float tmp_A = (float) gsl_vector_get(s->x,0);
         float tmp_sig = (float) gsl_vector_get(s->x,2);
-        if(fabs(tmp_A) > (float)0.0000001){
-            float tmp_s  = tmp_A/tmp_sig;
+            float tmp_s  = fabs(tmp_A/tmp_sig);
             if(tmp_s > save){
                 save = tmp_s;
                 parm->winner->x = (int) ring->x;
@@ -298,7 +296,6 @@ static void gaussian_thread(gpointer data, gpointer user_data)
                 parm->winner->intensity = tmp_A;
                 parm->winner->contrast = ring->contrast;
             }
-        }
 
         }
     }
