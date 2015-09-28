@@ -46,20 +46,16 @@ class PivJob(PivJob):
         self.add_task('cand', 'candidate-filter', 
                 threshold=p.candi_threshold, ring_start=p.ring_start, 
                 ring_step=p.ring_step, ring_end=p.ring_end )
-        self.add_task('azimu', 'multi-search')
+        self.add_task('azimu', 'azimuthal-test')
 
     def setup_graph(self, flag):
-        if flag==0:
-            b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'bc_contrast', 'input_fft')
-            b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')
-            b3 = self.branch('ring_convolution', 'ifft', 'likelihood', 'cand', 'ring_writer')
-            self.graph.merge_branch(b1, b2, b3)
-        else:
-            b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'bc_contrast', 'input_fft')
-            b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')
-            b3 = self.branch('ring_convolution', 'ifft', 'likelihood', 'null') 
-            self.graph.merge_branch(b1, b2, b3)
-
+        b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'bc_contrast', 'input_fft')
+        b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')
+        b3 = self.branch('bc_contrast')
+        b4 = self.branch('ring_convolution', 'ifft', 'likelihood', 'cand')
+        b5 = self.branch('azimu', 'ring_writer')
+        self.graph.merge_branch(b1, b2, b4)
+        self.graph.merge_branch(b3, b4, b5)
 
 j = PivJob(parms)
 j.profiling = config.get('profiling') or False
