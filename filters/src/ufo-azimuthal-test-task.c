@@ -24,7 +24,6 @@
 #include "ufo-ring-coordinates.h"
 
 
-
 struct _UfoAzimuthalTestTaskPrivate {
     guint radii_range;
     guint displacement;
