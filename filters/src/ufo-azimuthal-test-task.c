@@ -249,7 +249,6 @@ static void gaussian_thread(gpointer data, gpointer user_data)
     s = gsl_multifit_fdfsolver_alloc(T,max_r - min_r +1,3);
     f.n = max_r - min_r + 1;
     float save = 0;
-    printf("hi\n");
     for (int j = - (int) priv->displacement; j < (int) priv->displacement + 1; j++){
         for (int k = - (int) priv->displacement; k < (int) priv->displacement + 1; k++){
 
@@ -323,11 +322,12 @@ ufo_azimuthal_test_task_process (UfoTask *task,
     GThreadPool *thread_pool = NULL;
     gaussian_thread_data thread_data[num_cand];
     UfoRingCoordinate results[num_cand];
-    
+
+
+    printf("amount of rings = %d\n",num_cand);
 
     GError *err;
     thread_pool = g_thread_pool_new((GFunc) gaussian_thread, NULL,num_cand,TRUE,&err);
-
 
     static GMutex mutex = G_STATIC_MUTEX_INIT;
 
@@ -346,13 +346,16 @@ ufo_azimuthal_test_task_process (UfoTask *task,
     }
 
     g_thread_pool_free(thread_pool,FALSE,TRUE);
-
     g_message("%d , %d", (int) results[3].x, (int) results[3].y);
     float *res = ufo_buffer_get_host_array(output,NULL);
     res[0] = num_cand;
     
     UfoRingCoordinate *rings = (UfoRingCoordinate*) &res[1];
-    rings = results;
+
+    for(int i=0; i < num_cand;i++)
+        rings[i] = results[i];
+
+
     g_free(tmp_pic);
     return TRUE;
 }
