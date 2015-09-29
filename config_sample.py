@@ -13,11 +13,6 @@ parms = dict(
     ring_end    = 30,
     ring_step   = 2,
     ring_method = 0,
-    contrast_c2 = 6,
-    contrast_c4 = 4,
-    likelihoodmask = 13,
-    likelihoodmaskinner = 6,
-    candi_threshold = 200,
     maxima_sig  = 3.0, 
     blob_alpha  = 1.0 )
 
