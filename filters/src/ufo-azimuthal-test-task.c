@@ -18,6 +18,7 @@
  */
 
 #include <math.h>
+#include <string.h>
 #include <gsl/gsl_multifit_nlin.h>
 
 #include "ufo-azimuthal-test-task.h"
@@ -56,7 +57,6 @@ ufo_azimuthal_test_task_setup (UfoTask *task,
                        UfoResources *resources,
                        GError **error)
 {
-
 }
 
 static void
@@ -195,6 +195,142 @@ static int gaussian_fdf (const gsl_vector *x, void *data, gsl_vector *f, gsl_mat
     return GSL_SUCCESS;
 }
 
+
+G_LOCK_DEFINE(binary_pic);
+
+typedef struct _gaussian_thread_data{
+    int tid;
+   
+    UfoAzimuthalTestTaskPrivate *priv;
+    UfoRingCoordinate* ring;
+   
+    float* image;   // input image
+    short* binary_pic; //Matrix of done pixels
+    int img_width;
+    int img_height;
+
+    int tmp_S;
+    UfoRingCoordinate* winner;
+     
+    GMutex* mutex;
+} gaussian_thread_data;
+
+#define MAX_LENGTH_HISTOGRAM 32
+
+static void gaussian_thread(gpointer data, gpointer user_data)
+{
+    int status;
+    float histogram[MAX_LENGTH_HISTOGRAM];
+    float h[MAX_LENGTH_HISTOGRAM];
+
+    //Thread copying
+    gaussian_thread_data *parm = (gaussian_thread_data*) data;
+
+    float *image = parm->image;
+    int img_width = parm->img_width;
+    int img_height = parm->img_height;
+    short* binary_pic = parm->binary_pic;
+    UfoRingCoordinate* ring =  parm->ring;
+    unsigned radii_range = parm->priv->radii_range;
+    int displacement = parm->priv->displacement;
+
+    // decide range of data to be considered in the fitting procedure
+    // Since we aim at outer rings, keep the search range on the inner side strict,
+    // and relax outer search range. This will help increase the probablility for
+    // finding the peak position of the outer ring.
+    int min_r = ring->r - radii_range;      
+    int max_r = ring->r + radii_range + 4;  
+    min_r = (min_r < 1) ? 1 : min_r;
+
+    // initialize Gaussian fitting solver
+    int nd = max_r - min_r + 1;
+    int np = 3;
+
+    const gsl_multifit_fdfsolver_type *T;
+    gsl_multifit_fdfsolver *s;
+    gsl_multifit_function_fdf f;
+    gsl_vector_view view;
+
+    f.f = &gaussian_f;
+    f.df = &gaussian_df;
+    f.fdf = &gaussian_fdf;
+    f.n = nd;
+    f.p = np;
+
+    T = gsl_multifit_fdfsolver_lmsder;
+    s = gsl_multifit_fdfsolver_alloc(T, nd, np);
+
+    // loop through neighbour pixels and fit azimuthal histogram
+    float ratio_max = 0.0f;
+    for (int j = - displacement; j < displacement + 1; j++) {
+        for (int k = - displacement; k < displacement + 1; k++) {
+            memset(histogram, 0, MAX_LENGTH_HISTOGRAM * sizeof(float));
+            memset(h, 0, MAX_LENGTH_HISTOGRAM * sizeof(float));
+
+            int center_x = ring->x + k;
+            int center_y = ring->y + j;
+
+            for(int r = min_r; r <= max_r; ++r)
+                histogram[r - min_r] = compute_intensity(image, r, 
+                        center_x, center_y, img_width, img_height, radii_range);
+
+            int peak_pos = find_peak(histogram, nd);
+            int rr = peak_pos + 2 > max_r ? max_r : peak_pos + 2;
+            int r0 = min_r + rr - 5;
+
+            for (int r = 4; r >= 0; r--, rr--) {
+                if (rr >= 0)
+                    h[r] = histogram[rr];
+                else
+                    h[r] = 0.0;
+            }
+
+            struct fitting_data d = {5, h};
+            f.params = &d;
+
+            // initial values for fitting parameter
+            double x_init[] = {histogram[peak_pos], peak_pos, 2};
+            view = gsl_vector_view_array(x_init, 3);
+
+            gsl_multifit_fdfsolver_set(s, &f, &view.vector);
+
+            int iter = 0;
+            do{
+                iter++;
+                status = gsl_multifit_fdfsolver_iterate(s);
+                if(status) break;
+                status = gsl_multifit_test_delta(s->dx, s->x, 1e-4, 1e-4);
+            } while (status == GSL_CONTINUE && iter < 50);
+                
+            float parm_A = (float) gsl_vector_get(s->x, 0);
+            float parm_mu = (float) gsl_vector_get(s->x, 1);
+            float parm_sig = (float) gsl_vector_get(s->x, 2);
+            float ratio  = fabs(parm_A/parm_sig);
+
+            if (parm_mu > 0.0f && parm_mu < 5.0f && parm_sig < 7.0f && ratio > ratio_max && ratio > 40.0f) {
+                ratio_max = ratio;
+                parm->winner->x = (int) ring->x + k;
+                parm->winner->y = (int) ring->y + j;
+                parm->winner->r = r0 + parm_mu;
+                parm->winner->intensity = ratio;
+                parm->winner->contrast = ring->contrast;
+            }
+
+            /*
+             *g_message(                                                          
+             *    "histogram = %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f",
+             *    histogram[0], histogram[1], histogram[2], histogram[3], histogram[4],
+             *    histogram[5], histogram[6], histogram[7], histogram[8], histogram[9]);
+             *g_message(                                                          
+             *    "h = %.5f, %.5f, %.5f, %.5f, %.5f, ", h[0], h[1], h[2], h[3], h[4]);
+             *g_message(
+             *    "(%3d, %3d): r0 = %d, min_r = %d, A = %.5f, sig = %.5f, mu = %.5f, A/sig = %.5f", 
+             *    (int)ring->x + k, (int)ring->y + j, (int) ring->r, min_r, parm_A, parm_sig, parm_mu + r0, ratio);
+             */
+        }
+    }
+}
+
 static gboolean
 ufo_azimuthal_test_task_process (UfoTask *task,
                          UfoBuffer **inputs,
@@ -202,87 +338,62 @@ ufo_azimuthal_test_task_process (UfoTask *task,
                          UfoRequisition *requisition)
 {
     UfoAzimuthalTestTaskPrivate *priv = UFO_AZIMUTHAL_TEST_TASK_GET_PRIVATE (task);
-    GTimer *timer = g_timer_new();
 
-    float *in_cpu = ufo_buffer_get_host_array (inputs[1], NULL);
-    guint num_cand = (guint) in_cpu[0];
-    UfoRingCoordinate *cand = (UfoRingCoordinate*) &in_cpu[1];
+    float *image = ufo_buffer_get_host_array (inputs[0], NULL);
+    float *cand_stream = ufo_buffer_get_host_array (inputs[1], NULL);
 
-    const gsl_multifit_fdfsolver_type *T;
-    gsl_multifit_fdfsolver *s;
+    guint num_cand = (guint) *cand_stream;
+    UfoRingCoordinate *cand = (UfoRingCoordinate*) &cand_stream[1];
 
-    T = gsl_multifit_fdfsolver_lmsder;
-    gsl_multifit_function_fdf f;
-    int status;
+    UfoRequisition req;
+    ufo_buffer_get_requisition(inputs[0], &req);
+    int img_width = req.dims[0];
+    int img_height = req.dims[1];
 
-    f.f = &gaussian_f;
-    f.df = &gaussian_df;
-    f.fdf = &gaussian_fdf;
-    f.p = 3;
+    short* binary_pic = g_malloc0(sizeof(short) * img_width *img_height);
+    gaussian_thread_data thread_data[num_cand];
+    UfoRingCoordinate results[num_cand];
 
-    float t1=0.0, t2=0.0;
+    GError *err;
+    GThreadPool *thread_pool = NULL;
+    thread_pool = g_thread_pool_new((GFunc) gaussian_thread, NULL, 16, TRUE,&err);
+
+    static GMutex mutex = G_STATIC_MUTEX_INIT;
 
     for (unsigned i = 0; i < num_cand; i++) {
-        int min_r = cand[i].r - priv->radii_range;
-        int max_r = cand[i].r + priv->radii_range;
-        min_r = (min_r < 1) ? 1 : min_r;
-
-        g_message ("************");
-        g_message("ring %d %d %d", (int)cand[i].x, (int)cand[i].y, (int)cand[i].r);
-
-        float histogram[max_r - min_r + 1];
-
-        double x_init[] = {10, cand[i].r, 2};
-        gsl_vector_view x = gsl_vector_view_array (x_init, 3);
-        s = gsl_multifit_fdfsolver_alloc (T, max_r - min_r + 1, 3);
-        f.n = max_r - min_r + 1;
-
-
-        for (int j = - (int) priv->displacement; j < (int) priv->displacement + 1; j++)
-        for (int k = - (int) priv->displacement; k < (int) priv->displacement + 1; k++)
-        {
-            UfoRingCoordinate ring = {cand[i].x + j, cand[i].y + k, cand[i].r, 0.0, 0.0};
-
-            g_timer_start(timer);
-            for (int r = min_r; r <= max_r; ++r) {
-                histogram[r-min_r] = compute_intensity(inputs[0], &ring, r);
-            }
-            t1 += g_timer_elapsed(timer, NULL);
-
-            struct fitting_data d = {max_r - min_r + 1, histogram};
-            f.params = &d;
-            gsl_multifit_fdfsolver_set(s, &f, &x.vector);
-            int iter = 0;
-
-            g_timer_start(timer);
-            do {
-                iter++;
-                status = gsl_multifit_fdfsolver_iterate (s);
-                if (status) break;
-
-                status = gsl_multifit_test_delta (s->dx, s->x, 1e-4, 1e-4);
-            } while (status == GSL_CONTINUE && iter < 50);
-            t2 += g_timer_elapsed(timer, NULL);
-
-            g_message(
-                "histogram = %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f",
-                histogram[0], histogram[1], histogram[2], histogram[3], histogram[4], 
-                histogram[5], histogram[6], histogram[7], histogram[8], histogram[9]); 
-
-            g_message ("iter = %d", iter);
-            g_message ("min_r = %d", min_r);
-            g_message ("A   = %.5f", gsl_vector_get(s->x, 0));
-            g_message ("mu  = %.5f", gsl_vector_get(s->x, 1));
-            g_message ("sig = %.5f", fabs(gsl_vector_get(s->x, 2)));
-            g_message ("x = %d y = %d A/sig = %.5f", (int)ring.x, (int)ring.y, gsl_vector_get(s->x, 0) / fabs(gsl_vector_get(s->x, 2)));
-        }
+        thread_data[i].tid = i;
+        thread_data[i].priv = priv;
+        thread_data[i].ring = &cand[i];
+        thread_data[i].image = image;
+        thread_data[i].binary_pic = binary_pic;
+        thread_data[i].img_width = img_width;
+        thread_data[i].img_height = img_height;
+        thread_data[i].winner = &results[i];
+        thread_data[i].mutex = &mutex;
+        
+        g_thread_pool_push(thread_pool, &thread_data[i],&err); 
     }
 
-    g_message ("process");
-    g_message ("compute_intensity = %f", t1); 
-    g_message ("fitting = %f", t2); 
+    g_thread_pool_free(thread_pool, FALSE, TRUE);
 
-    g_timer_destroy(timer);
+    float *res = ufo_buffer_get_host_array(output, NULL);
+
+    UfoRingCoordinate *rings = (UfoRingCoordinate*) &res[1];
+
+    int num = 0;
+    for(unsigned i=0; i < num_cand;i++) {
+        if (results[i].r > 0.0f) {
+            rings[num] = results[i];
+            num++;
+        }
+    }
+    res[0] = num;
+    
+    /*req.n_dims = 1;*/
+    /*req.dims[0] = 1 + num * sizeof(UfoRingCoordinate) / sizeof(float);*/
+    /*ufo_buffer_resize(output, &req);*/
+
+    g_free(binary_pic);
     return TRUE;
 }
 
@@ -293,6 +404,7 @@ ufo_azimuthal_test_task_set_property (GObject *object,
                               GParamSpec *pspec)
 {
     UfoAzimuthalTestTaskPrivate *priv = UFO_AZIMUTHAL_TEST_TASK_GET_PRIVATE (object);
+    (void) priv;
 
     switch (property_id) {
         case PROP_TEST:
@@ -310,6 +422,7 @@ ufo_azimuthal_test_task_get_property (GObject *object,
                               GParamSpec *pspec)
 {
     UfoAzimuthalTestTaskPrivate *priv = UFO_AZIMUTHAL_TEST_TASK_GET_PRIVATE (object);
+    (void) priv;
 
     switch (property_id) {
         case PROP_TEST:
@@ -363,6 +476,6 @@ static void
 ufo_azimuthal_test_task_init(UfoAzimuthalTestTask *self)
 {
     self->priv = UFO_AZIMUTHAL_TEST_TASK_GET_PRIVATE(self);
-    self->priv->radii_range = 5;
+    self->priv->radii_range = 4;
     self->priv->displacement = 1;
 }
