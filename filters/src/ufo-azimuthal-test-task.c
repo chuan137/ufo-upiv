@@ -98,52 +98,55 @@ static int max (int l, int r)
 
 static void
 get_coords(int *left, int *right, int *top, int *bot, int rad,
-        UfoRequisition *req, UfoRingCoordinate *center)
+        int center_x, int center_y, int img_width, int img_height)
 {
-    int l = (int) roundf (center->x - (float) rad);
-    int r = (int) roundf (center->x + (float) rad);
-    int t = (int) roundf (center->y - (float) rad);
-    int b = (int) roundf (center->y + (float) rad);
+    int l = center_x - rad;
+    int r = center_x + rad;
+    int t = center_y - rad;
+    int b = center_y + rad;
     *left = max (l, 0);
-    *right = min (r, (int) (req->dims[0]) - 1);
-    // Bottom most point is req->dims[1]
+    *right = min (r, img_width - 1);
     *top = max (t, 0);
-    // Top most point is 0
-    *bot = min (b, (int) (req->dims[1]) - 1);
+    *bot = min (b, img_height - 1);
 }
 
 static float
-compute_intensity (UfoBuffer *ufo_image, UfoRingCoordinate *center, int r)
+compute_intensity (float *image, int r, int center_x, int center_y, int img_width, int img_height, int radii_range)
 {
-    float intensity = 0;
-    UfoRequisition req;
-    ufo_buffer_get_requisition(ufo_image, &req);
-    float *image = ufo_buffer_get_host_array(ufo_image, NULL);
-    int x_center = (int) roundf (center->x);
-    int y_center = (int) roundf (center->y);
     int left, right, top, bot;
-    get_coords(&left, &right, &top, &bot, r, &req, center);
-    unsigned counter = 0;
+    get_coords(&left, &right, &top, &bot, r + radii_range, center_x, center_y, img_width, img_height);
     
+    unsigned counter = 0;
+    float intensity = 0;
+
     for (int y = top; y <= bot; ++y) {
         for (int x = left; x <= right; ++x) {
-            int xx = (x - x_center) * (x - x_center);
-            int yy = (y - y_center) * (y - y_center);
+            int xx = (x - center_x) * (x - center_x);
+            int yy = (y - center_y) * (y - center_y);
             /* Check if point is on ring */
             if (fabs (sqrtf ((float) (xx + yy)) - (float) r) < 0.5) {
-                intensity += image[x + y * (int) req.dims[0]];
+                intensity += image[x + y * img_width];
                 ++counter;
-            }
+            } 
         }
     }
 
     /*return intensity;*/
-
-    
     if(counter != 0)
         return intensity / (float) counter;
-    else    
+    else {
         return 0;
+    }
+
+}
+
+static int
+find_peak (float *data, int num) {
+    for (int i = num-3; i >= 1; i--) {
+        if (data[i] > data[i+1] && data[i] > data[i-1])
+            return i;
+    }
+    return 0;
 }
 
 struct fitting_data {
