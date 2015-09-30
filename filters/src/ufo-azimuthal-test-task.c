@@ -142,8 +142,8 @@ compute_intensity (float *image, int r, int center_x, int center_y, int img_widt
 
 static int
 find_peak (float *data, int num) {
-    int pos;
-#if 1
+    int pos = 0;
+#if 0
     for (int i = num - 3; i > 1; i--) {
         float d0 = 0.5 * (data[i-1] + data[i]);
         if (d0 > 1.005 * data[i+1] && d0 > 1.005 * data[i-2]) {
@@ -152,15 +152,24 @@ find_peak (float *data, int num) {
         }
     }
 #else
-    for (int i = num - 3; i > 1; i--) {
-        float d0 = data[i];
-        if (d0 > 1.005 * data[i+1] && d0 > 1.005 * data[i-1]) {
-            pos = i;
+    for (int i = 2; i < num - 3; i++) {
+        float d0 = 0.5 * (data[i] + data[i+1]);
+        if (d0 > 1.005 * data[i+2] && d0 > 1.005 * data[i-1]) {
+            pos = data[i] > data[i+1] ? i : i + 1;
             break;
         }
     }
 #endif
-    return pos > 2 ? pos : 0;
+    /*
+     *for (int i = num - 3; i > 1; i--) {
+     *    float d0 = data[i];
+     *    if (d0 > 1.005 * data[i+1] && d0 > 1.005 * data[i-1]) {
+     *        pos = i;
+     *        break;
+     *    }
+     *}
+     */
+    return pos;
 }
 
 struct fitting_data {
@@ -326,7 +335,7 @@ static void gaussian_thread(gpointer data, gpointer user_data)
                 histogram[25], histogram[26], histogram[27], histogram[28], histogram[29],
                 histogram[30], histogram[31]);
 
-            if (peak_pos == 0) continue;
+            if (peak_pos <= 2 || peak_pos >= max_r - min_r - 1) continue;
 
             rr = 0;
             for (int r = peak_pos - 2; r < peak_pos + 3; r++, rr++) {
@@ -375,7 +384,7 @@ static void gaussian_thread(gpointer data, gpointer user_data)
     }
 }
 
-#define NUM_MAX_THREAD 16
+#define NUM_MAX_THREAD 1
 static gboolean
 ufo_azimuthal_test_task_process (UfoTask *task,
                          UfoBuffer **inputs,
@@ -521,6 +530,6 @@ static void
 ufo_azimuthal_test_task_init(UfoAzimuthalTestTask *self)
 {
     self->priv = UFO_AZIMUTHAL_TEST_TASK_GET_PRIVATE(self);
-    self->priv->radii_range = 10;
+    self->priv->radii_range = 11;
     self->priv->displacement = 1;
 }
