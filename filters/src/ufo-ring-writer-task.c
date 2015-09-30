@@ -95,7 +95,7 @@ ufo_ring_writer_task_process (UfoTask *task,
     printf("#################################\n");
     printf("RingWriter: number of rings %u\n", num);
     for (unsigned  i = 0; i < num; i++) {
-        printf("%8.0f %8.0f %8.0f %10.2f %10.2f\n",
+        printf("%8.0f %8.0f %8.2f %16.2f %10.2f\n",
                 rings[i].x,
                 rings[i].y,
                 rings[i].r,

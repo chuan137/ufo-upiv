@@ -142,11 +142,25 @@ compute_intensity (float *image, int r, int center_x, int center_y, int img_widt
 
 static int
 find_peak (float *data, int num) {
-    for (int i = num-3; i >= 1; i--) {
-        if (data[i] > data[i+1] && data[i] > data[i-1])
-            return i;
+    int pos;
+#if 1
+    for (int i = num - 3; i > 1; i--) {
+        float d0 = 0.5 * (data[i-1] + data[i]);
+        if (d0 > 1.005 * data[i+1] && d0 > 1.005 * data[i-2]) {
+            pos = data[i] > data[i-1] ? i : i - 1;
+            break;
+        }
     }
-    return 0;
+#else
+    for (int i = num - 3; i > 1; i--) {
+        float d0 = data[i];
+        if (d0 > 1.005 * data[i+1] && d0 > 1.005 * data[i-1]) {
+            pos = i;
+            break;
+        }
+    }
+#endif
+    return pos > 2 ? pos : 0;
 }
 
 struct fitting_data {
@@ -218,13 +232,13 @@ typedef struct _gaussian_thread_data{
     GMutex* mutex;
 } gaussian_thread_data;
 
-#define MAX_LENGTH_HISTOGRAM 32
+#define HIST_MAX_LEN 32
 
 static void gaussian_thread(gpointer data, gpointer user_data)
 {
     int status;
-    float histogram[MAX_LENGTH_HISTOGRAM];
-    float h[MAX_LENGTH_HISTOGRAM];
+    float histogram[HIST_MAX_LEN];
+    float h[HIST_MAX_LEN];
 
     //Thread copying
     gaussian_thread_data *parm = (gaussian_thread_data*) data;
@@ -242,7 +256,7 @@ static void gaussian_thread(gpointer data, gpointer user_data)
     // and relax outer search range. This will help increase the probablility for
     // finding the peak position of the outer ring.
     int min_r = ring->r - radii_range;      
-    int max_r = ring->r + radii_range + 4;  
+    int max_r = ring->r + radii_range + 6;  
     min_r = (min_r < 1) ? 1 : min_r;
 
     // initialize Gaussian fitting solver
@@ -267,32 +281,63 @@ static void gaussian_thread(gpointer data, gpointer user_data)
     float ratio_max = 0.0f;
     for (int j = - displacement; j < displacement + 1; j++) {
         for (int k = - displacement; k < displacement + 1; k++) {
-            memset(histogram, 0, MAX_LENGTH_HISTOGRAM * sizeof(float));
-            memset(h, 0, MAX_LENGTH_HISTOGRAM * sizeof(float));
+            g_message("\n");
 
+            memset (histogram, 0, HIST_MAX_LEN * sizeof(*h));
+            memset (h, 0, HIST_MAX_LEN * sizeof(*h));
+
+            int rr;
+            int peak_pos, peak_r;
             int center_x = ring->x + k;
             int center_y = ring->y + j;
 
-            for(int r = min_r; r <= max_r; ++r)
+            for(int r = min_r; r <= max_r; r++)
                 histogram[r - min_r] = compute_intensity(image, r, 
                         center_x, center_y, img_width, img_height, radii_range);
 
-            int peak_pos = find_peak(histogram, nd);
-            int rr = peak_pos + 2 > max_r ? max_r : peak_pos + 2;
-            int r0 = min_r + rr - 5;
+            // smoothing histogram
+            for (int r = 1; r < max_r - min_r; r++)
+                h[r] = 0.5 * histogram[r] + 0.25 * (histogram[r+1] + histogram[r-1]);
+            /*for (int r = 0; r < max_r - min_r + 1; r++)*/
+                /*histogram[r] = h[r];*/
 
-            for (int r = 4; r >= 0; r--, rr--) {
-                if (rr >= 0)
-                    h[r] = histogram[rr];
-                else
-                    h[r] = 0.0;
+            memcpy(histogram, h, HIST_MAX_LEN * sizeof(*h));
+            memset(h, 0, HIST_MAX_LEN * sizeof(*h));
+
+            peak_pos = find_peak(histogram, max_r-min_r+1);
+            peak_r = min_r + peak_pos;
+
+            g_message("(%3d, %3d): r0 = %d, min_r = %d, max_r = %d, peak_r = %d, peak_pos = %d", 
+                    (int)ring->x + k, (int)ring->y + j, 
+                    (int)ring->r, min_r, max_r, peak_r, peak_pos);
+            g_message(                                                          
+                "histogram\
+                \n\t\t%8.2f, %8.2f, %8.2f, %8.2f, %8.2f,\
+                \n\t\t%8.2f, %8.2f, %8.2f, %8.2f, %8.2f,\
+                \n\t\t%8.2f, %8.2f, %8.2f, %8.2f, %8.2f,\
+                \n\t\t%8.2f, %8.2f, %8.2f, %8.2f, %8.2f,\
+                \n\t\t%8.2f, %8.2f, %8.2f, %8.2f, %8.2f,\
+                \n\t\t%8.2f, %8.2f, %8.2f, %8.2f, %8.2f",
+                histogram[0], histogram[1], histogram[2], histogram[3], histogram[4],
+                histogram[5], histogram[6], histogram[7], histogram[8], histogram[9],
+                histogram[10], histogram[11], histogram[12], histogram[13], histogram[14],
+                histogram[15], histogram[16], histogram[17], histogram[18], histogram[19],
+                histogram[20], histogram[21], histogram[22], histogram[23], histogram[24],
+                histogram[25], histogram[26], histogram[27], histogram[28], histogram[29],
+                histogram[30], histogram[31]);
+
+            if (peak_pos == 0) continue;
+
+            rr = 0;
+            for (int r = peak_pos - 2; r < peak_pos + 3; r++, rr++) {
+                h[rr] = histogram[r];
             }
 
             struct fitting_data d = {5, h};
             f.params = &d;
 
             // initial values for fitting parameter
-            double x_init[] = {histogram[peak_pos], peak_pos, 2};
+            double x_init[] = {h[2], 2, 2};
             view = gsl_vector_view_array(x_init, 3);
 
             gsl_multifit_fdfsolver_set(s, &f, &view.vector);
@@ -310,26 +355,22 @@ static void gaussian_thread(gpointer data, gpointer user_data)
             float parm_sig = (float) gsl_vector_get(s->x, 2);
             float ratio  = fabs(parm_A/parm_sig);
 
-            if (parm_mu > 0.0f && parm_mu < 5.0f && parm_sig < 7.0f && ratio > ratio_max && ratio > 40.0f) {
+            if (ratio > ratio_max) {
                 ratio_max = ratio;
                 parm->winner->x = (int) ring->x + k;
                 parm->winner->y = (int) ring->y + j;
-                parm->winner->r = r0 + parm_mu;
-                parm->winner->intensity = ratio;
+                parm->winner->r = peak_r + 2 - parm_mu;
                 parm->winner->contrast = ring->contrast;
+                if (parm_mu > 0.0f && parm_mu < 5.0f && parm_sig < 8.0f) {
+                    parm->winner->intensity = ratio;
+                } else {
+                    parm->winner->intensity = -ratio;
+                }
             }
 
-            /*
-             *g_message(                                                          
-             *    "histogram = %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f",
-             *    histogram[0], histogram[1], histogram[2], histogram[3], histogram[4],
-             *    histogram[5], histogram[6], histogram[7], histogram[8], histogram[9]);
-             *g_message(                                                          
-             *    "h = %.5f, %.5f, %.5f, %.5f, %.5f, ", h[0], h[1], h[2], h[3], h[4]);
-             *g_message(
-             *    "(%3d, %3d): r0 = %d, min_r = %d, A = %.5f, sig = %.5f, mu = %.5f, A/sig = %.5f", 
-             *    (int)ring->x + k, (int)ring->y + j, (int) ring->r, min_r, parm_A, parm_sig, parm_mu + r0, ratio);
-             */
+            g_message("h = %.5f, %.5f, %.5f, %.5f, %.5f, ", h[0], h[1], h[2], h[3], h[4]);
+            g_message( "A = %.5f, sig = %.5f, mu = %.5f, A/sig = %.5f", 
+                parm_A, parm_sig, parm_mu, ratio);
         }
     }
 }
@@ -359,7 +400,7 @@ ufo_azimuthal_test_task_process (UfoTask *task,
 
     GError *err;
     GThreadPool *thread_pool = NULL;
-    thread_pool = g_thread_pool_new((GFunc) gaussian_thread, NULL, 16, TRUE,&err);
+    thread_pool = g_thread_pool_new((GFunc) gaussian_thread, NULL, 1, TRUE,&err);
 
     static GMutex mutex = G_STATIC_MUTEX_INIT;
 
@@ -479,6 +520,6 @@ static void
 ufo_azimuthal_test_task_init(UfoAzimuthalTestTask *self)
 {
     self->priv = UFO_AZIMUTHAL_TEST_TASK_GET_PRIVATE(self);
-    self->priv->radii_range = 4;
+    self->priv->radii_range = 8;
     self->priv->displacement = 1;
 }
