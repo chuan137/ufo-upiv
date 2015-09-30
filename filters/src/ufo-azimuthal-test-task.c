@@ -375,6 +375,7 @@ static void gaussian_thread(gpointer data, gpointer user_data)
     }
 }
 
+#define NUM_MAX_THREAD 16
 static gboolean
 ufo_azimuthal_test_task_process (UfoTask *task,
                          UfoBuffer **inputs,
@@ -400,7 +401,7 @@ ufo_azimuthal_test_task_process (UfoTask *task,
 
     GError *err;
     GThreadPool *thread_pool = NULL;
-    thread_pool = g_thread_pool_new((GFunc) gaussian_thread, NULL, 1, TRUE,&err);
+    thread_pool = g_thread_pool_new((GFunc) gaussian_thread, NULL, NUM_MAX_THREAD, TRUE,&err);
 
     static GMutex mutex = G_STATIC_MUTEX_INIT;
 
@@ -520,6 +521,6 @@ static void
 ufo_azimuthal_test_task_init(UfoAzimuthalTestTask *self)
 {
     self->priv = UFO_AZIMUTHAL_TEST_TASK_GET_PRIVATE(self);
-    self->priv->radii_range = 8;
+    self->priv->radii_range = 10;
     self->priv->displacement = 1;
 }
