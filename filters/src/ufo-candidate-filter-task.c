@@ -126,14 +126,36 @@ static void filter_neighbour (gpointer data, gpointer user_data) {
             r->contrast = 0.0;
 }
 
+static UfoRingCoordinate* get_ring(GList *l) {
+    UfoRingCoordinate *r = (UfoRingCoordinate *) l->data;
+    return r;
+}
+
 static GList* filter_sort_candidate (GList *list)
 {
     list = sort_candidate(list);
 
-    for (GList *current=list; current; current = current->next) {
-        g_list_foreach(list, filter_neighbour, current->data);
+    // filter local peak in neighbouring fixels, set others to 0
+    for (GList *current=list; current; current=current->next) {
+        UfoRingCoordinate *r = get_ring(current);
+        if (r->contrast == 0.0f) continue;
+        for (GList *l = current->next; l; l=l->next) {
+            UfoRingCoordinate *s = get_ring(l);
+            if (fabs(r->x - s->x) > 5)
+                break;
+            if (fabs(r->y - s->y) > 5)
+                break;
+            /*if (fabs(r->r - s->r) > 3)*/
+                /*break;*/
+            if (s->contrast > r->contrast) {
+                r->contrast = 0.0f;
+                break;
+            }
+            s->contrast = 0.0f;
+        }
     }
 
+    // remove 0's 
     for (GList *current=list; current;) {
         GList *next = current->next;
         UfoRingCoordinate *r = (UfoRingCoordinate*) current->data;
@@ -197,6 +219,7 @@ ufo_candidate_filter_task_process (UfoTask *task,
 
     // filter candidate neighbours
     cand_list = filter_sort_candidate (cand_list);
+
     int num_cand = g_list_length(cand_list);
     g_message ("number of candidate %d", num_cand);
 
