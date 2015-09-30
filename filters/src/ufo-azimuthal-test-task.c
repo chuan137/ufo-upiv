@@ -276,6 +276,7 @@ static void gaussian_thread(gpointer data, gpointer user_data)
     gsl_multifit_fdfsolver *s;
     gsl_multifit_function_fdf f;
     gsl_vector_view view;
+    gsl_matrix *covar;
 
     f.f = &gaussian_f;
     f.df = &gaussian_df;
@@ -285,6 +286,7 @@ static void gaussian_thread(gpointer data, gpointer user_data)
 
     T = gsl_multifit_fdfsolver_lmsder;
     s = gsl_multifit_fdfsolver_alloc(T, nd, np);
+    covar = gsl_matrix_alloc (np, np);
 
     // loop through neighbour pixels and fit azimuthal histogram
     float ratio_max = 0.0f;
@@ -358,10 +360,18 @@ static void gaussian_thread(gpointer data, gpointer user_data)
                 if(status) break;
                 status = gsl_multifit_test_delta(s->dx, s->x, 1e-4, 1e-4);
             } while (status == GSL_CONTINUE && iter < 50);
+
+            gsl_multifit_covar (s->J, 0.0, covar);
+
+#define FIT(i) gsl_vector_get(s->x, i)
+#define ERR(i) sqrt(gsl_matrix_get(covar,i,i))
                 
-            float parm_A = (float) gsl_vector_get(s->x, 0);
-            float parm_mu = (float) gsl_vector_get(s->x, 1);
-            float parm_sig = (float) gsl_vector_get(s->x, 2);
+            float parm_A = FIT(0);
+            float parm_mu = FIT(1);
+            float parm_sig = FIT(2);
+            float err_A = ERR(0);
+            float err_mu = ERR(1);
+            float err_sig = ERR(2);
             float ratio  = fabs(parm_A/parm_sig);
 
             if (ratio > ratio_max) {
@@ -370,16 +380,19 @@ static void gaussian_thread(gpointer data, gpointer user_data)
                 parm->winner->y = (int) ring->y + j;
                 parm->winner->r = peak_r + 2 - parm_mu;
                 parm->winner->contrast = ring->contrast;
-                if (parm_mu > 0.0f && parm_mu < 5.0f && parm_sig < 8.0f) {
+                /*if (parm_mu > 0.0f && parm_mu < 5.0f && parm_sig < 8.0f) {*/
+                if (parm_mu > 0.0f && err_sig < 0.5f) {
                     parm->winner->intensity = ratio;
                 } else {
                     parm->winner->intensity = -ratio;
                 }
             }
 
+            
+
             g_message("h = %.5f, %.5f, %.5f, %.5f, %.5f, ", h[0], h[1], h[2], h[3], h[4]);
-            g_message( "A = %.5f, sig = %.5f, mu = %.5f, A/sig = %.5f", 
-                parm_A, parm_sig, parm_mu, ratio);
+            g_message( "A = %.5f (%.5f), sig = %.5f (%.5f), mu = %.5f (%.5f), A/sig = %.5f", 
+                parm_A, err_A, parm_sig, err_sig, parm_mu, err_mu, ratio);
         }
     }
 }
@@ -436,7 +449,7 @@ ufo_azimuthal_test_task_process (UfoTask *task,
 
     int num = 0;
     for(unsigned i=0; i < num_cand;i++) {
-        if (results[i].r > 0.0f) {
+        if (results[i].intensity > 0.0f) {
             rings[num] = results[i];
             num++;
         }
