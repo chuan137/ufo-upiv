@@ -142,8 +142,8 @@ compute_intensity (float *image, int r, int center_x, int center_y, int img_widt
 
 static int
 find_peak (float *data, int num) {
-    int pos;
-#if 1
+    int pos = 0;
+#if 0
     for (int i = num - 3; i > 1; i--) {
         float d0 = 0.5 * (data[i-1] + data[i]);
         if (d0 > 1.005 * data[i+1] && d0 > 1.005 * data[i-2]) {
@@ -152,15 +152,24 @@ find_peak (float *data, int num) {
         }
     }
 #else
-    for (int i = num - 3; i > 1; i--) {
-        float d0 = data[i];
-        if (d0 > 1.005 * data[i+1] && d0 > 1.005 * data[i-1]) {
-            pos = i;
+    for (int i = 2; i < num - 3; i++) {
+        float d0 = 0.5 * (data[i] + data[i+1]);
+        if (d0 > 1.005 * data[i+2] && d0 > 1.005 * data[i-1]) {
+            pos = data[i] > data[i+1] ? i : i + 1;
             break;
         }
     }
 #endif
-    return pos > 2 ? pos : 0;
+    /*
+     *for (int i = num - 3; i > 1; i--) {
+     *    float d0 = data[i];
+     *    if (d0 > 1.005 * data[i+1] && d0 > 1.005 * data[i-1]) {
+     *        pos = i;
+     *        break;
+     *    }
+     *}
+     */
+    return pos;
 }
 
 struct fitting_data {
@@ -267,6 +276,7 @@ static void gaussian_thread(gpointer data, gpointer user_data)
     gsl_multifit_fdfsolver *s;
     gsl_multifit_function_fdf f;
     gsl_vector_view view;
+    gsl_matrix *covar;
 
     f.f = &gaussian_f;
     f.df = &gaussian_df;
@@ -276,6 +286,7 @@ static void gaussian_thread(gpointer data, gpointer user_data)
 
     T = gsl_multifit_fdfsolver_lmsder;
     s = gsl_multifit_fdfsolver_alloc(T, nd, np);
+    covar = gsl_matrix_alloc (np, np);
 
     // loop through neighbour pixels and fit azimuthal histogram
     float ratio_max = 0.0f;
@@ -326,7 +337,7 @@ static void gaussian_thread(gpointer data, gpointer user_data)
                 histogram[25], histogram[26], histogram[27], histogram[28], histogram[29],
                 histogram[30], histogram[31]);
 
-            if (peak_pos == 0) continue;
+            if (peak_pos <= 2 || peak_pos >= max_r - min_r - 1) continue;
 
             rr = 0;
             for (int r = peak_pos - 2; r < peak_pos + 3; r++, rr++) {
@@ -349,10 +360,18 @@ static void gaussian_thread(gpointer data, gpointer user_data)
                 if(status) break;
                 status = gsl_multifit_test_delta(s->dx, s->x, 1e-4, 1e-4);
             } while (status == GSL_CONTINUE && iter < 50);
+
+            gsl_multifit_covar (s->J, 0.0, covar);
+
+#define FIT(i) gsl_vector_get(s->x, i)
+#define ERR(i) sqrt(gsl_matrix_get(covar,i,i))
                 
-            float parm_A = (float) gsl_vector_get(s->x, 0);
-            float parm_mu = (float) gsl_vector_get(s->x, 1);
-            float parm_sig = (float) gsl_vector_get(s->x, 2);
+            float parm_A = FIT(0);
+            float parm_mu = FIT(1);
+            float parm_sig = FIT(2);
+            float err_A = ERR(0);
+            float err_mu = ERR(1);
+            float err_sig = ERR(2);
             float ratio  = fabs(parm_A/parm_sig);
 
             if (ratio > ratio_max) {
@@ -361,20 +380,24 @@ static void gaussian_thread(gpointer data, gpointer user_data)
                 parm->winner->y = (int) ring->y + j;
                 parm->winner->r = peak_r + 2 - parm_mu;
                 parm->winner->contrast = ring->contrast;
-                if (parm_mu > 0.0f && parm_mu < 5.0f && parm_sig < 8.0f) {
+                /*if (parm_mu > 0.0f && parm_mu < 5.0f && parm_sig < 8.0f) {*/
+                if (parm_mu > 0.0f && err_sig < 0.5f) {
                     parm->winner->intensity = ratio;
                 } else {
                     parm->winner->intensity = -ratio;
                 }
             }
 
+            
+
             g_message("h = %.5f, %.5f, %.5f, %.5f, %.5f, ", h[0], h[1], h[2], h[3], h[4]);
-            g_message( "A = %.5f, sig = %.5f, mu = %.5f, A/sig = %.5f", 
-                parm_A, parm_sig, parm_mu, ratio);
+            g_message( "A = %.5f (%.5f), sig = %.5f (%.5f), mu = %.5f (%.5f), A/sig = %.5f", 
+                parm_A, err_A, parm_sig, err_sig, parm_mu, err_mu, ratio);
         }
     }
 }
 
+#define NUM_MAX_THREAD 1
 static gboolean
 ufo_azimuthal_test_task_process (UfoTask *task,
                          UfoBuffer **inputs,
@@ -400,7 +423,7 @@ ufo_azimuthal_test_task_process (UfoTask *task,
 
     GError *err;
     GThreadPool *thread_pool = NULL;
-    thread_pool = g_thread_pool_new((GFunc) gaussian_thread, NULL, 1, TRUE,&err);
+    thread_pool = g_thread_pool_new((GFunc) gaussian_thread, NULL, NUM_MAX_THREAD, TRUE,&err);
 
     static GMutex mutex = G_STATIC_MUTEX_INIT;
 
@@ -426,7 +449,7 @@ ufo_azimuthal_test_task_process (UfoTask *task,
 
     int num = 0;
     for(unsigned i=0; i < num_cand;i++) {
-        if (results[i].r > 0.0f) {
+        if (results[i].intensity > 0.0f) {
             rings[num] = results[i];
             num++;
         }
@@ -520,6 +543,6 @@ static void
 ufo_azimuthal_test_task_init(UfoAzimuthalTestTask *self)
 {
     self->priv = UFO_AZIMUTHAL_TEST_TASK_GET_PRIVATE(self);
-    self->priv->radii_range = 8;
+    self->priv->radii_range = 11;
     self->priv->displacement = 1;
 }
