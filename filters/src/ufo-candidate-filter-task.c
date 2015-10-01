@@ -34,6 +34,7 @@ struct _UfoCandidateFilterTaskPrivate {
     guint ring_step;
     guint ring_end;
     guint ring_current;
+    guint scale;
     gfloat threshold;
 };
 
@@ -50,6 +51,7 @@ enum {
     PROP_RING_START,
     PROP_RING_STEP,
     PROP_RING_END,
+    PROP_SCALE,
     PROP_THRESHOLD,
     N_PROPERTIES
 };
@@ -118,13 +120,15 @@ static GList* sort_candidate (GList *list)
     return g_list_sort(list, compare_func);
 }
 
-static void filter_neighbour (gpointer data, gpointer user_data) {
-    UfoRingCoordinate *r = (UfoRingCoordinate *) data;
-    UfoRingCoordinate *s = (UfoRingCoordinate *) user_data;
-    if (fabs(r->x + r->y - s->x - s->y) < 5.0 && fabs(r->r - s->r) < 2.0)
-        if (r->contrast < s->contrast)
-            r->contrast = 0.0;
-}
+/*
+ *static void filter_neighbour (gpointer data, gpointer user_data) {
+ *    UfoRingCoordinate *r = (UfoRingCoordinate *) data;
+ *    UfoRingCoordinate *s = (UfoRingCoordinate *) user_data;
+ *    if (fabs(r->x + r->y - s->x - s->y) < 5.0 && fabs(r->r - s->r) < 2.0)
+ *        if (r->contrast < s->contrast)
+ *            r->contrast = 0.0;
+ *}
+ */
 
 static UfoRingCoordinate* get_ring(GList *l) {
     UfoRingCoordinate *r = (UfoRingCoordinate *) l->data;
@@ -146,6 +150,7 @@ static GList* filter_sort_candidate (GList *list)
             if (fabs(r->y - s->y) > 5)
                 break;
             /*if (fabs(r->r - s->r) > 3)*/
+
                 /*break;*/
             if (s->contrast > r->contrast) {
                 r->contrast = 0.0f;
@@ -212,7 +217,7 @@ ufo_candidate_filter_task_process (UfoTask *task,
     rings = (UfoRingCoordinate*) cand_cpu; 
     for(int i = 0; i < max_cand; i++) {
         if (fabs(rings[i].intensity - 1.0f) < 0.000001f) {
-            rings[i].r = priv->ring_start + priv->ring_step * rings[i].r;
+            rings[i].r = (priv->ring_start + priv->ring_step * rings[i].r) / priv->scale;
             cand_list = g_list_append(cand_list, (gpointer) &rings[i]);
         }
     }
@@ -258,6 +263,9 @@ ufo_candidate_filter_task_set_property (GObject *object,
         case PROP_RING_END:
             priv->ring_end = g_value_get_uint(value);
             break;
+        case PROP_SCALE:
+            priv->scale = g_value_get_uint(value);
+            break;
         case PROP_THRESHOLD:
             priv->threshold = g_value_get_float(value);
             break;
@@ -284,6 +292,9 @@ ufo_candidate_filter_task_get_property (GObject *object,
             break;
         case PROP_RING_END:
             g_value_set_uint (value, priv->ring_end);
+            break;
+        case PROP_SCALE:
+            g_value_set_uint (value, priv->scale);
             break;
         case PROP_THRESHOLD:
             g_value_set_float(value, priv->threshold);
@@ -343,6 +354,12 @@ ufo_candidate_filter_task_class_init (UfoCandidateFilterTaskClass *klass)
                1, G_MAXUINT, 5,
                G_PARAM_READWRITE);
 
+    properties[PROP_SCALE] =
+        g_param_spec_uint ("scale",
+               "Rescale factor", "",
+               1, 2, 1,
+               G_PARAM_READWRITE);
+
     properties[PROP_THRESHOLD] = 
         g_param_spec_float ("threshold",
                "", "",
@@ -362,6 +379,7 @@ ufo_candidate_filter_task_init(UfoCandidateFilterTask *self)
     self->priv->ring_start = 5;
     self->priv->ring_end = 5;
     self->priv->ring_step = 2;
-    self->priv->ring_current = self->priv->ring_start;
+    self->priv->scale = 1;
     self->priv->threshold = 300.0;
+    self->priv->ring_current = self->priv->ring_start;
 }

@@ -28,6 +28,7 @@
 struct _UfoAzimuthalTestTaskPrivate {
     guint radii_range;
     guint displacement;
+    guint scale;
 };
 
 static void ufo_task_interface_init (UfoTaskIface *iface);
@@ -40,7 +41,7 @@ G_DEFINE_TYPE_WITH_CODE (UfoAzimuthalTestTask, ufo_azimuthal_test_task, UFO_TYPE
 
 enum {
     PROP_0,
-    PROP_TEST,
+    PROP_SCALE,
     N_PROPERTIES
 };
 
@@ -143,6 +144,7 @@ compute_intensity (float *image, int r, int center_x, int center_y, int img_widt
 static int
 find_peak (float *data, int num) {
     int pos = 0;
+    float alpha = 1.05;
 #if 0
     for (int i = num - 3; i > 1; i--) {
         float d0 = 0.5 * (data[i-1] + data[i]);
@@ -152,13 +154,18 @@ find_peak (float *data, int num) {
         }
     }
 #else
-    for (int i = 2; i < num - 3; i++) {
-        float d0 = 0.5 * (data[i] + data[i+1]);
-        if (d0 > 1.005 * data[i+2] && d0 > 1.005 * data[i-1]) {
-            pos = data[i] > data[i+1] ? i : i + 1;
-            break;
+    while (pos==0 && alpha > 1.0001) {
+        for (int i = 2; i < num - 3; i++) {
+            float d0 = 0.5 * (data[i] + data[i+1]);
+            if (d0 > alpha * data[i+2] && d0 > alpha * data[i-1]) {
+                pos = data[i] > data[i+1] ? i : i + 1;
+                break;
+            }
         }
+        g_message("alpha: %f", alpha);
+        alpha = 1.0f + (alpha - 1)/2.0f;
     }
+    g_message("alpha: %f, pos: %d", alpha, pos);
 #endif
     /*
      *for (int i = num - 3; i > 1; i--) {
@@ -255,7 +262,7 @@ static void gaussian_thread(gpointer data, gpointer user_data)
     float *image = parm->image;
     int img_width = parm->img_width;
     int img_height = parm->img_height;
-    short* binary_pic = parm->binary_pic;
+    /*short* binary_pic = parm->binary_pic;*/
     UfoRingCoordinate* ring =  parm->ring;
     unsigned radii_range = parm->priv->radii_range;
     int displacement = parm->priv->displacement;
@@ -328,7 +335,8 @@ static void gaussian_thread(gpointer data, gpointer user_data)
                 \n\t\t%8.2f, %8.2f, %8.2f, %8.2f, %8.2f,\
                 \n\t\t%8.2f, %8.2f, %8.2f, %8.2f, %8.2f,\
                 \n\t\t%8.2f, %8.2f, %8.2f, %8.2f, %8.2f,\
-                \n\t\t%8.2f, %8.2f, %8.2f, %8.2f, %8.2f",
+                \n\t\t%8.2f, %8.2f, %8.2f, %8.2f, %8.2f,\
+                \n\t\t%8.2f, %8.2f",
                 histogram[0], histogram[1], histogram[2], histogram[3], histogram[4],
                 histogram[5], histogram[6], histogram[7], histogram[8], histogram[9],
                 histogram[10], histogram[11], histogram[12], histogram[13], histogram[14],
@@ -381,7 +389,7 @@ static void gaussian_thread(gpointer data, gpointer user_data)
                 parm->winner->r = peak_r + 2 - parm_mu;
                 parm->winner->contrast = ring->contrast;
                 /*if (parm_mu > 0.0f && parm_mu < 5.0f && parm_sig < 8.0f) {*/
-                if (parm_mu > 0.0f && err_sig < 0.5f) {
+                if (parm_mu > 0.0f && err_sig < 0.9f * parm_sig) {
                     parm->winner->intensity = ratio;
                 } else {
                     parm->winner->intensity = -ratio;
@@ -404,20 +412,27 @@ ufo_azimuthal_test_task_process (UfoTask *task,
                          UfoBuffer *output,
                          UfoRequisition *requisition)
 {
-    UfoAzimuthalTestTaskPrivate *priv = UFO_AZIMUTHAL_TEST_TASK_GET_PRIVATE (task);
+    UfoAzimuthalTestTaskPrivate *priv;
+    UfoRequisition req;
 
+    priv = UFO_AZIMUTHAL_TEST_TASK_GET_PRIVATE (task);
     float *image = ufo_buffer_get_host_array (inputs[0], NULL);
     float *cand_stream = ufo_buffer_get_host_array (inputs[1], NULL);
-
     guint num_cand = (guint) *cand_stream;
     UfoRingCoordinate *cand = (UfoRingCoordinate*) &cand_stream[1];
 
-    UfoRequisition req;
     ufo_buffer_get_requisition(inputs[0], &req);
     int img_width = req.dims[0];
     int img_height = req.dims[1];
 
-    short* binary_pic = g_malloc0(sizeof(short) * img_width *img_height);
+    if (priv->scale == 2)
+        for (unsigned i = 0; i < num_cand; i++) {
+            cand[i].x *= priv->scale;
+            cand[i].y *= priv->scale;
+            cand[i].r *= priv->scale;
+        }
+
+    /*short* binary_pic = g_malloc0(sizeof(short) * img_width *img_height);*/
     gaussian_thread_data thread_data[num_cand];
     UfoRingCoordinate results[num_cand];
 
@@ -425,18 +440,18 @@ ufo_azimuthal_test_task_process (UfoTask *task,
     GThreadPool *thread_pool = NULL;
     thread_pool = g_thread_pool_new((GFunc) gaussian_thread, NULL, NUM_MAX_THREAD, TRUE,&err);
 
-    static GMutex mutex = G_STATIC_MUTEX_INIT;
+    /*static GMutex mutex = G_STATIC_MUTEX_INIT;*/
 
     for (unsigned i = 0; i < num_cand; i++) {
         thread_data[i].tid = i;
         thread_data[i].priv = priv;
         thread_data[i].ring = &cand[i];
         thread_data[i].image = image;
-        thread_data[i].binary_pic = binary_pic;
+        /*thread_data[i].binary_pic = binary_pic;*/
         thread_data[i].img_width = img_width;
         thread_data[i].img_height = img_height;
         thread_data[i].winner = &results[i];
-        thread_data[i].mutex = &mutex;
+        /*thread_data[i].mutex = &mutex;*/
         
         g_thread_pool_push(thread_pool, &thread_data[i],&err); 
     }
@@ -460,7 +475,7 @@ ufo_azimuthal_test_task_process (UfoTask *task,
     /*req.dims[0] = 1 + num * sizeof(UfoRingCoordinate) / sizeof(float);*/
     /*ufo_buffer_resize(output, &req);*/
 
-    g_free(binary_pic);
+    /*g_free(binary_pic);*/
     return TRUE;
 }
 
@@ -471,10 +486,11 @@ ufo_azimuthal_test_task_set_property (GObject *object,
                               GParamSpec *pspec)
 {
     UfoAzimuthalTestTaskPrivate *priv = UFO_AZIMUTHAL_TEST_TASK_GET_PRIVATE (object);
-    (void) priv;
 
     switch (property_id) {
-        case PROP_TEST:
+        case PROP_SCALE:
+            priv->scale = g_value_get_uint(value);
+            priv->displacement = priv->scale;
             break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -489,10 +505,10 @@ ufo_azimuthal_test_task_get_property (GObject *object,
                               GParamSpec *pspec)
 {
     UfoAzimuthalTestTaskPrivate *priv = UFO_AZIMUTHAL_TEST_TASK_GET_PRIVATE (object);
-    (void) priv;
 
     switch (property_id) {
-        case PROP_TEST:
+        case PROP_SCALE:
+            g_value_set_uint (value, priv->scale);
             break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -526,12 +542,11 @@ ufo_azimuthal_test_task_class_init (UfoAzimuthalTestTaskClass *klass)
     oclass->get_property = ufo_azimuthal_test_task_get_property;
     oclass->finalize = ufo_azimuthal_test_task_finalize;
 
-    properties[PROP_TEST] =
-        g_param_spec_string ("test",
-            "Test property nick",
-            "Test property description blurb",
-            "",
-            G_PARAM_READWRITE);
+    properties[PROP_SCALE] =
+        g_param_spec_uint ("scale",
+               "Rescale factor", "",
+               1, 2, 1,
+               G_PARAM_READWRITE);
 
     for (guint i = PROP_0 + 1; i < N_PROPERTIES; i++)
         g_object_class_install_property (oclass, i, properties[i]);
@@ -543,6 +558,7 @@ static void
 ufo_azimuthal_test_task_init(UfoAzimuthalTestTask *self)
 {
     self->priv = UFO_AZIMUTHAL_TEST_TASK_GET_PRIVATE(self);
-    self->priv->radii_range = 11;
+    self->priv->radii_range = 10;
     self->priv->displacement = 1;
+    self->priv->scale = 1;
 }

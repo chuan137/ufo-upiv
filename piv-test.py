@@ -47,8 +47,8 @@ class PivJob(PivJob):
                 masksize=p.likelihoodmask, maskinnersize=p.likelihoodmaskinner)
         self.add_task('cand', 'candidate-filter', 
                 threshold=p.candi_threshold, ring_start=p.ring_start, 
-                ring_step=p.ring_step, ring_end=p.ring_end )
-        self.add_task('azimu', 'azimuthal-test')
+                ring_step=p.ring_step, ring_end=p.ring_end, scale=p.scale )
+        self.add_task('azimu', 'azimuthal-test', scale=p.scale)
 
     def setup_graph(self, flag):
         if flag==0:
