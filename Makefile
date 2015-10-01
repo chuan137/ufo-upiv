@@ -1,4 +1,5 @@
 SHELL := /bin/bash
+TESTSCRIPT := ./piv-test.py
 
 #SAMPLES := sampleB sampleC
 SAMPLES := sampleB
@@ -11,7 +12,7 @@ CONFIGFILE = config_tmp.py
 INPUTPATH = data/
 OUTFILE = data/res_tmp.tif
 
-all : hough likelyhood candidate
+all : hough likelyhood candidate azimu
 
 .PHONY : tests all
 
@@ -26,7 +27,7 @@ define run_single
 	sed -ri "s~([^#]out_file\s+=\s+).*~\1'$(OUTFILE)',~g" $(CONFIGFILE); \
 	for key in $(frames); do \
 		sed -ri "s/(\s+start\s+=\s+)[0-9]+/\1$$key/g" $(CONFIGFILE); \
-		python ./piv.py $(CONFIGFILE) 1> $$stdout 2> /dev/null; \
+		python $(TESTSCRIPT) $(CONFIGFILE) 1> $$stdout 2> /dev/null; \
 		if [ -n "$(3)" ]; then \
 			mv $$stdout $(TARGETDIR)/$$sample/$(strip $(3)).$$key; \
 		else \
@@ -44,7 +45,7 @@ define run_series
 	sed -ri "s~([^#]in_path\s+=\s+).*~\1'$(INPUTPATH)/$$sample',~g" $(CONFIGFILE); \
 	sed -ri "s~([^#]out_file\s+=\s+).*~\1'$(OUTFILE)',~g" $(CONFIGFILE); \
 	sed -ri "s/([^#]\s+number\s+=\s+).*/\1$(FRAMES),/g" $(CONFIGFILE); \
-	python ./piv.py $(CONFIGFILE); \
+	python $(TESTSCRIPT) $(CONFIGFILE); \
 	cp $(OUTFILE) $(TARGETDIR)/$$sample/$(strip $(1)).tif; \
 	rm $(CONFIGFILE)*; \
 	done
@@ -66,6 +67,11 @@ likelyhood : $(foreach ss, $(SAMPLES), config_$(ss).py)
 candidate: $(foreach ss, $(SAMPLES), config_$(ss).py)
 	@echo -e "\nBuilding $@ ..."
 	$(call run_single, $@, 1, cand.txt)
+
+azimu: $(foreach ss, $(SAMPLES), config_$(ss).py)
+	@echo -e "\nBuilding $@ ..."
+	$(call run_single, $@, 0, azimu.txt)
+
 
 .PHONY : clean
 
