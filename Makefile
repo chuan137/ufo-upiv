@@ -1,79 +1,55 @@
+
+SAMPLES := sampleB sampleC
+NUM_FRAMES := 2
+
+BUILD_TIF := contrast hough likelihood
+BUILD_TXT := candidate azimu
+BUILDS = $(BUILD_TIF) $(BUILD_TXT)
+
+SCRIPT := ./piv-test.py
+OUTBASE := ./res
+OUTPUT_TIF := $(OUTBASE)/output.tif
 SHELL := /bin/bash
-TESTSCRIPT := ./piv-test.py
 
-#SAMPLES := sampleB sampleC
-SAMPLES := sampleB
-FRAMES := 1
+FRAME_LIST = $(shell seq 0 $$(($(NUM_FRAMES)-1)))
+SAMPLE_DIRS = $(addprefix $(OUTBASE)/, $(SAMPLES))
 
-frames := $$(seq 0 $$(($(FRAMES)-1)))
-
-TARGETDIR = data/res/
-CONFIGFILE = config_tmp.py
-INPUTPATH = data/
-OUTFILE = data/res_tmp.tif
-
-all : hough likelyhood candidate azimu
-
-.PHONY : tests all
-
-define run_single
-@for sample in $(SAMPLES); do \
-	if [ -n "$(3)" ]; then stdout="$(3)"; else stdout="/dev/null"; fi;\
-	echo $$stdout; \
-	cp config_$$sample.py $(CONFIGFILE); \
-	mkdir -p $(TARGETDIR)/$$sample; \
-	sed -ri "s/(graph = )[0-9]/\1$(2)/g" $(CONFIGFILE); \
-	sed -ri "s~([^#]in_path\s+=\s+).*~\1'$(INPUTPATH)/$$sample',~g" $(CONFIGFILE); \
-	sed -ri "s~([^#]out_file\s+=\s+).*~\1'$(OUTFILE)',~g" $(CONFIGFILE); \
-	for key in $(frames); do \
-		sed -ri "s/(\s+start\s+=\s+)[0-9]+/\1$$key/g" $(CONFIGFILE); \
-		python $(TESTSCRIPT) $(CONFIGFILE) 1> $$stdout 2> /dev/null; \
-		if [ -n "$(3)" ]; then \
-			mv $$stdout $(TARGETDIR)/$$sample/$(strip $(3)).$$key; \
-		else \
-			mv $(OUTFILE) $(TARGETDIR)/$$sample/$(strip $(1))_$$key.tif; \
-		fi \
-		done \
-	done
+define mk_config_file
+@cp config_$(lastword $(subst /, ,$(@D))).py $@
+@sed -ri "s~([^#]out_file\s+=\s+).*~\1'$(OUTPUT_TIF)',~g" $@
+@sed -ri "s/([^#]\s+number\s+=\s+).*/\11,/g" $@
+@sed -ri "s/(\s+start\s+=\s+)[0-9]+/\1$(number)/g" $@
+@sed -ri "s/(graph = ).*/\1'$(graph)'/g" $@
 endef
 
-define run_series
-@for sample in $(SAMPLES); do \
-	cp config_$$sample.py $(CONFIGFILE); \
-	mkdir -p $(TARGETDIR)/$$sample; \
-	sed -ri "s/(graph = )[0-9]/\1$(2)/g" $(CONFIGFILE); \
-	sed -ri "s~([^#]in_path\s+=\s+).*~\1'$(INPUTPATH)/$$sample',~g" $(CONFIGFILE); \
-	sed -ri "s~([^#]out_file\s+=\s+).*~\1'$(OUTFILE)',~g" $(CONFIGFILE); \
-	sed -ri "s/([^#]\s+number\s+=\s+).*/\1$(FRAMES),/g" $(CONFIGFILE); \
-	python $(TESTSCRIPT) $(CONFIGFILE); \
-	cp $(OUTFILE) $(TARGETDIR)/$$sample/$(strip $(1)).tif; \
-	rm $(CONFIGFILE)*; \
-	done
-endef
+all: $(BUILD_TIF)
+.PHONY: all
 
+$(BUILD_TIF): % : $(SAMPLE_DIRS) $(foreach ff,$(FRAME_LIST), $(foreach dd,$(SAMPLE_DIRS), $(dd)/%_$(ff).tif))
+$(BUILD_TXT): % : $(SAMPLE_DIRS) $(foreach ff,$(FRAME_LIST), $(foreach dd,$(SAMPLE_DIRS), $(dd)/%_$(ff).txt))
 
-tests :	
-	@echo $(frames)
-	@echo $(foreach ss, $(SAMPLES), config_$(ss).py)
+%.tif: %_config.py
+	@cp $< config_tmp.py
+	@python $(SCRIPT) config_tmp
+	@mv $(OUTPUT_TIF) $@
+	@rm config_tmp.py*
+%.txt: %_config.py
+	@echo $@
+	@cp $< config_tmp.py
+	@python $(SCRIPT) config_tmp
+	@rm config_tmp.py*
 
-hough : $(foreach ss, $(SAMPLES), config_$(ss).py)
-	@echo -e "\nBuilding $@ ..."
-	$(call run_single, $@, 3)
+%_config.py:
+	$(eval graph=$(firstword $(subst _, ,$(*F))))
+	$(eval number=$(lastword $(subst _, ,$(*F))))
+	$(mk_config_file)
 
-likelyhood : $(foreach ss, $(SAMPLES), config_$(ss).py)
-	@echo -e "\nBuilding $@ ..."
-	$(call run_single, $@, 2)
+$(SAMPLE_DIRS):
+	mkdir -p $@
 
-candidate: $(foreach ss, $(SAMPLES), config_$(ss).py)
-	@echo -e "\nBuilding $@ ..."
-	$(call run_single, $@, 1, cand.txt)
-
-azimu: $(foreach ss, $(SAMPLES), config_$(ss).py)
-	@echo -e "\nBuilding $@ ..."
-	$(call run_single, $@, 0, azimu.txt)
-
-
-.PHONY : clean
-
-clean:
-	rm -rf $(foreach ss, $(SAMPLES), $(TARGETDIR)/$(ss))
+clean: cleansub
+	$(eval empty=$(shell ls -A $(OUTBASE)))
+	@if [ "$(empty)" == "" ]; then rm -rf $(OUTBASE); fi
+cleansub: 
+	rm -rf $(SAMPLE_DIRS)
+.PHONY: clean

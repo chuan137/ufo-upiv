@@ -16,6 +16,8 @@ try:
     parms = cf.parms
     config = cf.config
 except:
+    print sys.exc_info()
+    print 'piv-test'
     from config import parms, config
 
 class PivJob(PivJob):
@@ -25,9 +27,10 @@ class PivJob(PivJob):
         sc = self.parms.scale
 
         self.add_task('crop', x=p.xshift, y=p.yshift, width=p.width, height=p.height)
-        self.add_task('contrast', 'piv_contrast', 
-                c1=p.contrast_c1, c2=p.contrast_c2,
-                c3=p.contrast_c3, c4=p.contrast_c4)
+        # self.add_task('contrast', 'piv_contrast', 
+                # c1=p.contrast_c1, c2=p.contrast_c2,
+                # c3=p.contrast_c3, c4=p.contrast_c4)
+        self.add_task('contrast')
         self.add_task('rescale', factor=1.0/sc)
         self.add_task('input_fft', 'fft', dimensions=2)
         self.add_copy_task('bc_image') 
@@ -51,7 +54,7 @@ class PivJob(PivJob):
         self.add_task('azimu', 'azimuthal-test', scale=p.scale)
 
     def setup_graph(self, flag):
-        if flag==0:
+        if flag==0 or flag=='azimu':
             b1 = self.branch('read', 'crop', 'bc_image', 'rescale', 'contrast', 'input_fft')
             b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')
             b3 = self.branch('bc_image')
@@ -59,24 +62,25 @@ class PivJob(PivJob):
             b5 = self.branch('azimu', 'ring_writer')
             self.graph.merge_branch(b1, b2, b4)
             self.graph.merge_branch(b3, b4, b5)
-        elif flag==1: # candidate
+        elif flag==1 or flag=='candidate':
             b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'input_fft')
             b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')
             b3 = self.branch('ring_convolution', 'ifft', 'likelihood', 'cand', 'ring_writer')
             self.graph.merge_branch(b1, b2, b3)
-        elif flag==2: # likelihood
+        elif flag==2 or flag=='likelihood':
             b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'input_fft')
             b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')
             b3 = self.branch('ring_convolution', 'ifft', 'likelihood', 'write')
             self.graph.merge_branch(b1, b2, b3)
-        elif flag==3: # hough
-            b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'input_fft')
+        elif flag==3 or flag=='hough':
+            b1 = self.branch('read', 'crop', 'contrast', 'rescale', 'input_fft')
             b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')
             b3 = self.branch('ring_convolution', 'ifft', 'write')
             self.graph.merge_branch(b1, b2, b3)
-        elif flag==4:
+        elif flag==4 or flag=='contrast':
             b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'write')
         else:
+            print flag
             pass
 
 j = PivJob(parms)
