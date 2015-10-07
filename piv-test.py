@@ -16,8 +16,6 @@ try:
     parms = cf.parms
     config = cf.config
 except:
-    print sys.exc_info()
-    print 'piv-test'
     from config import parms, config
 
 class PivJob(PivJob):
@@ -55,7 +53,7 @@ class PivJob(PivJob):
 
     def setup_graph(self, flag):
         if flag==0 or flag=='azimu':
-            b1 = self.branch('read', 'crop', 'bc_image', 'rescale', 'contrast', 'input_fft')
+            b1 = self.branch('read', 'crop', 'contrast', 'bc_image', 'rescale', 'input_fft')
             b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')
             b3 = self.branch('bc_image')
             b4 = self.branch('ring_convolution', 'ifft', 'likelihood', 'cand')
@@ -63,12 +61,12 @@ class PivJob(PivJob):
             self.graph.merge_branch(b1, b2, b4)
             self.graph.merge_branch(b3, b4, b5)
         elif flag==1 or flag=='candidate':
-            b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'input_fft')
+            b1 = self.branch('read', 'crop', 'contrast', 'rescale', 'input_fft')
             b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')
             b3 = self.branch('ring_convolution', 'ifft', 'likelihood', 'cand', 'ring_writer')
             self.graph.merge_branch(b1, b2, b3)
         elif flag==2 or flag=='likelihood':
-            b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'input_fft')
+            b1 = self.branch('read', 'crop', 'contrast', 'rescale', 'input_fft')
             b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')
             b3 = self.branch('ring_convolution', 'ifft', 'likelihood', 'write')
             self.graph.merge_branch(b1, b2, b3)
@@ -78,7 +76,7 @@ class PivJob(PivJob):
             b3 = self.branch('ring_convolution', 'ifft', 'write')
             self.graph.merge_branch(b1, b2, b3)
         elif flag==4 or flag=='contrast':
-            b1 = self.branch('read', 'crop', 'rescale', 'contrast', 'write')
+            b1 = self.branch('read', 'crop', 'contrast', 'write')
         else:
             print flag
             pass
