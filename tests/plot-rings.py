@@ -50,6 +50,9 @@ with open(file_str) as f:
         if r != old_r:
             cnt += 1;
             old_r = r;
+
+        if r>1024:
+            continue
         
         circ = plt.Circle((A[0],A[1]), radius = r, color=color_array[cnt%len(color_array)],fill=False);
         ax.add_patch(circ)
@@ -59,14 +62,4 @@ ax.add_patch(circ);
 plt.imshow(first,cmap=my_cmap);
 plt.title(file_str)
 plt.savefig(outpath)
-
-
-
-
-
-
-
-
-
-
 
