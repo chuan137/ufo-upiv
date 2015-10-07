@@ -419,13 +419,14 @@ ufo_azimuthal_test_task_process (UfoTask *task,
     float *image = ufo_buffer_get_host_array (inputs[0], NULL);
     float *cand_stream = ufo_buffer_get_host_array (inputs[1], NULL);
     guint num_cand = (guint) *cand_stream;
-    UfoRingCoordinate *cand = (UfoRingCoordinate*) &cand_stream[1];
+    guint scale = (guint) cand_stream[1];
+    UfoRingCoordinate *cand = (UfoRingCoordinate*) &cand_stream[2];
 
     ufo_buffer_get_requisition(inputs[0], &req);
     int img_width = req.dims[0];
     int img_height = req.dims[1];
 
-    if (priv->scale == 2)
+    if (scale == 2)
         for (unsigned i = 0; i < num_cand; i++) {
             cand[i].x *= priv->scale;
             cand[i].y *= priv->scale;

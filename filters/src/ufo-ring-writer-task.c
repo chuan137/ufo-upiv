@@ -23,7 +23,8 @@
 
 
 struct _UfoRingWriterTaskPrivate {
-    gint foo;
+    FILE *fp;
+    gchar *filename;
 };
 
 static void ufo_task_interface_init (UfoTaskIface *iface);
@@ -36,7 +37,7 @@ G_DEFINE_TYPE_WITH_CODE (UfoRingWriterTask, ufo_ring_writer_task, UFO_TYPE_TASK_
 
 enum {
     PROP_0,
-    PROP_TEST,
+    PROP_FILENAME,
     N_PROPERTIES
 };
 
@@ -53,6 +54,8 @@ ufo_ring_writer_task_setup (UfoTask *task,
                        UfoResources *resources,
                        GError **error)
 {
+    UfoRingWriterTaskPrivate *priv = UFO_RING_WRITER_TASK_GET_PRIVATE (task);
+    priv->fp = fopen(priv->filename, "w");
 }
 
 static void
@@ -88,17 +91,20 @@ ufo_ring_writer_task_process (UfoTask *task,
                          UfoBuffer *output,
                          UfoRequisition *requisition)
 {
-    gfloat *in_mem = ufo_buffer_get_host_array (inputs[0], NULL);
-    UfoRingCoordinate *rings = (UfoRingCoordinate*) (&in_mem[1]);
-    unsigned num = in_mem[0]; 
+    UfoRingWriterTaskPrivate *priv = UFO_RING_WRITER_TASK_GET_PRIVATE (task);
 
-    printf("#################################\n");
-    printf("RingWriter: number of rings %u\n", num);
+    gfloat *in_mem = ufo_buffer_get_host_array (inputs[0], NULL);
+    UfoRingCoordinate *rings = (UfoRingCoordinate*) (&in_mem[2]);
+    unsigned num = in_mem[0]; 
+    unsigned scale = in_mem[1];
+
+    fprintf(priv->fp, "# RingWriter: number of rings %u\n", num);
     for (unsigned  i = 0; i < num; i++) {
-        printf("%8.0f %8.0f %8.2f %16.2f %10.2f\n",
-                rings[i].x,
-                rings[i].y,
-                rings[i].r,
+        fprintf(priv->fp, 
+                "%8.0f %8.0f %8.2f %16.2f %10.2f\n",
+                rings[i].x * scale,
+                rings[i].y * scale,
+                rings[i].r * scale,
                 rings[i].contrast,
                 rings[i].intensity);
     }
@@ -116,7 +122,9 @@ ufo_ring_writer_task_set_property (GObject *object,
     (void) priv;
 
     switch (property_id) {
-        case PROP_TEST:
+        case PROP_FILENAME:
+            g_free (priv->filename);
+            priv->filename = g_value_dup_string (value);
             break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -134,7 +142,8 @@ ufo_ring_writer_task_get_property (GObject *object,
     (void) priv;
 
     switch (property_id) {
-        case PROP_TEST:
+        case PROP_FILENAME:
+            g_value_set_string (value, priv->filename);
             break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -145,6 +154,16 @@ ufo_ring_writer_task_get_property (GObject *object,
 static void
 ufo_ring_writer_task_finalize (GObject *object)
 {
+    UfoRingWriterTaskPrivate *priv = UFO_RING_WRITER_TASK_GET_PRIVATE (object);
+
+    if (priv->fp) {
+        fclose(priv->fp);
+        priv->fp = NULL;
+    }
+
+    g_free (priv->filename);
+    priv->filename = NULL;
+
     G_OBJECT_CLASS (ufo_ring_writer_task_parent_class)->finalize (object);
 }
 
@@ -168,11 +187,10 @@ ufo_ring_writer_task_class_init (UfoRingWriterTaskClass *klass)
     oclass->get_property = ufo_ring_writer_task_get_property;
     oclass->finalize = ufo_ring_writer_task_finalize;
 
-    properties[PROP_TEST] =
-        g_param_spec_string ("test",
-            "Test property nick",
-            "Test property description blurb",
-            "",
+    properties[PROP_FILENAME] =
+        g_param_spec_string ("filename",
+            "Filename filename string","",
+            "./res.txt",
             G_PARAM_READWRITE);
 
     for (guint i = PROP_0 + 1; i < N_PROPERTIES; i++)
@@ -185,4 +203,5 @@ static void
 ufo_ring_writer_task_init(UfoRingWriterTask *self)
 {
     self->priv = UFO_RING_WRITER_TASK_GET_PRIVATE(self);
+    self->priv->filename = g_strdup("./res.txt");
 }

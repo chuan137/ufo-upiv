@@ -229,13 +229,14 @@ ufo_candidate_filter_task_process (UfoTask *task,
     g_message ("number of candidate %d", num_cand);
 
     req.n_dims = 1;
-    req.dims[0] = 1 + num_cand * sizeof(UfoRingCoordinate) / sizeof (float);
+    req.dims[0] = 2 + num_cand * sizeof(UfoRingCoordinate) / sizeof (float);
     ufo_buffer_resize(output, &req);
 
     float* res = ufo_buffer_get_host_array(output,NULL);
     res[0] = num_cand;
+    res[1] = priv->scale;
 
-    rings = (UfoRingCoordinate*) &res[1];
+    rings = (UfoRingCoordinate*) &res[2];
     for (int i = 0; i < num_cand; i++) 
         rings[i] = * (UfoRingCoordinate *) g_list_nth_data (cand_list, i);
 

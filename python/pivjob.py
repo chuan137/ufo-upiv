@@ -39,8 +39,11 @@ class PivJob(UfoJob):
         p  = self.parms
 
         self.add_task('read', path=p.in_path, number=p.number, start=p.start)
-        self.add_task('write', filename=p.out_file)
-        self.add_task('ring_writer')
+        if p.out_file.endswith(('.txt')):
+            self.add_task('ring_writer', filename=p.out_file)
+        else:
+            self.add_task('write', filename=p.out_file)
+            self.add_task('ring_writer', filename='res.txt')
         self.add_task('m1', 'monitor')
         self.add_task('m2', 'monitor')
         self.add_task('m3', 'monitor')
@@ -121,7 +124,7 @@ class PivJob(UfoJob):
     def run(self, flag=0):
         self.setup_tasks()
         self.setup_graph(flag)
-        self.log_tasks()
+        #self.log_tasks()
         runtime = self.run_t()
         self.logger.info('')
         self.logger.info('Program finished in %s seconds' % runtime )
