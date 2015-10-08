@@ -111,72 +111,50 @@ get_coords(int *left, int *right, int *top, int *bot, int rad,
     *bot = min (b, img_height - 1);
 }
 
-static float
-compute_intensity (float *image, int r, int center_x, int center_y, int img_width, int img_height, int radii_range)
+static void
+compute_histogram(float *histogram, float *h, float *img, int center_x, int center_y,
+                        int min_r, int max_r, int img_width, int img_height)
 {
-    int left, right, top, bot;
-    get_coords(&left, &right, &top, &bot, r + radii_range, center_x, center_y, img_width, img_height);
-    
-    unsigned counter = 0;
-    float intensity = 0;
+    int x0, x1, y0, y1;
+    int r,i,j,ii,jj,idx;
 
-    for (int y = top; y <= bot; ++y) {
-        for (int x = left; x <= right; ++x) {
-            int xx = (x - center_x) * (x - center_x);
-            int yy = (y - center_y) * (y - center_y);
-            /* Check if point is on ring */
-            if (fabs (sqrtf ((float) (xx + yy)) - (float) r) < 0.5) {
-                intensity += image[x + y * img_width];
-                ++counter;
-            } 
-        }
-    }
+    get_coords(&x0, &x1, &y0, &y1, max_r, center_x, center_y, img_width, img_height);
 
-    /*return intensity;*/
-    if(counter != 0)
-        return intensity / (float) counter;
-    else {
-        return 0;
-    }
+    for (i = x0; i < x1; i++) for (j = y0; j < y1; j++) {
+        idx = i + j * img_width;
+        ii = i - center_x;
+        jj = j - center_y;
+        r = (int) roundf(sqrt(ii*ii+jj*jj));
 
-}
-
-static int
-find_peak (float *data, int num) {
-    int pos = 0;
-    float alpha = 1.05;
-#if 0
-    for (int i = num - 3; i > 1; i--) {
-        float d0 = 0.5 * (data[i-1] + data[i]);
-        if (d0 > 1.005 * data[i+1] && d0 > 1.005 * data[i-2]) {
-            pos = data[i] > data[i-1] ? i : i - 1;
-            break;
-        }
-    }
-#else
-    while (pos==0 && alpha > 1.0001) {
-        for (int i = 2; i < num - 3; i++) {
-            float d0 = 0.5 * (data[i] + data[i+1]);
-            if (d0 > alpha * data[i+2] && d0 > alpha * data[i-1]) {
-                pos = data[i] > data[i+1] ? i : i + 1;
-                break;
+        if (r >= min_r && r <= max_r) {
+            if (img[idx] > 0.0f) {
+                histogram[r - min_r] +=  img[idx];
+                h[r - min_r] += 1;
             }
         }
-        g_message("alpha: %f", alpha);
-        alpha = 1.0f + (alpha - 1)/2.0f;
     }
-    g_message("alpha: %f, pos: %d", alpha, pos);
-#endif
-    /*
-     *for (int i = num - 3; i > 1; i--) {
-     *    float d0 = data[i];
-     *    if (d0 > 1.005 * data[i+1] && d0 > 1.005 * data[i-1]) {
-     *        pos = i;
-     *        break;
-     *    }
-     *}
-     */
-    return pos;
+
+    for (r = 0; r < max_r - min_r + 1; r++)
+        if (h[r] > 0) histogram[r] /= h[r];
+}
+
+static void
+search_peaks(float *data, float *h, int wlen)
+{
+    int peak, i, j, k=0;
+    for (i = 0; i < MAX_HIST_LEN - wlen - 1; i++) {
+        peak = 0;
+        for (j = i; j < i + wlen - 1; j++)
+            if (data[j] >= data[j+1]) {
+                peak = j;
+                break;
+            }
+        for (; j < i + wlen - 1; j++)
+            if (data[j] <= data[j+1]) break;
+        if (peak != i + wlen/2 || j != i + wlen - 1 ||
+                data[j] == 0.0f || data[i] == 0.0f) continue;
+        h[k++] = peak;
+    }
 }
 
 struct fitting_data {
