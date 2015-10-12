@@ -61,5 +61,5 @@ f.close();
 ax.add_patch(circ);
 plt.imshow(first,cmap=my_cmap);
 plt.title(file_str)
-plt.savefig(outpath)
+plt.savefig(outpath, dpi=300,bbox_inches='tight')
 

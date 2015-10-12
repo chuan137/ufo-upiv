@@ -77,6 +77,14 @@ class PivJob(PivJob):
             self.graph.merge_branch(b1, b2, b3)
         elif flag==4 or flag=='contrast':
             b1 = self.branch('read', 'crop', 'contrast', 'write')
+        elif flag==5 or flag=='azimu2':
+            b1 = self.branch('read', 'crop', 'bc_image', 'contrast', 'rescale', 'input_fft')
+            b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')
+            b3 = self.branch('bc_image')
+            b4 = self.branch('ring_convolution', 'ifft', 'likelihood', 'cand')
+            b5 = self.branch('azimu', 'ring_writer')
+            self.graph.merge_branch(b1, b2, b4)
+            self.graph.merge_branch(b3, b4, b5)
         else:
             print flag
             pass

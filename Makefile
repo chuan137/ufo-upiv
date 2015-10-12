@@ -12,6 +12,7 @@ DATABASE := ./data
 OUTPUT_TIF := $(OUTBASE)/output.tif
 SHELL := /bin/bash
 TMP_CONFIG_FILE := config_tmp.py
+TMP_OUTPUT := /dev/null
 
 FRAME_LIST = $(shell seq 0 $$(($(NUM_FRAMES)-1)))
 SAMPLE_DIRS = $(addprefix $(OUTBASE)/, $(SAMPLES))
@@ -33,18 +34,18 @@ $(BUILD_TXT): % : $(SAMPLE_DIRS) $(foreach ff,$(FRAME_LIST), $(foreach dd,$(SAMP
 plots : $(addsuffix .png,$(basename $(foreach dd,$(SAMPLE_DIRS),$(wildcard $(dd)/*.txt))))
 
 %.tif %.txt: $(lastword $(subst /, ,$(%D)))
-	@echo $@ $<
+	@echo $@
 	$(eval graph=$(firstword $(subst _, ,$(*F))))
 	$(eval number=$(lastword $(subst _, ,$(*F))))
 	$(mk_config_file)
-	@python $(SCRIPT) $(basename $(TMP_CONFIG_FILE)) 2> /dev/null
+	@python $(SCRIPT) $(basename $(TMP_CONFIG_FILE)) 2> $(TMP_OUTPUT)
 	@rm config_tmp.py*
 
 %.png :
 	@echo $@ 
 	$(eval number=$(lastword $(subst _, ,$(*F))))
 	$(eval sample=$(lastword $(subst /, ,$(*D))))
-	@./tests/plot-rings.py $(DATABASE)/$(sample)/00$(number).tif $*.txt 2> /dev/null
+	@./tests/plot-rings.py $(DATABASE)/$(sample)/00$(number).tif $*.txt 2> $(TMP_OUTPUT)
 
 $(SAMPLE_DIRS):
 	mkdir -p $@
