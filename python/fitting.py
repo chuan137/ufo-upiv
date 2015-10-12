@@ -23,10 +23,10 @@ class Fit (object):
         except:
             pass
         v0 = val
-        best_val,covar = curve_fit(self._f,self.x,self.y, p0=v0)
-        self._val = best_val
-        self._covar = covar
-        return np.array(zip(best_val, np.diag(covar)))
+        popt,pcov = curve_fit(self._f,self.x,self.y, p0=v0)
+        self._parm = popt
+        self._err = np.sqrt(np.diag(pcov))
+        return np.array(zip(self._parm, self._err))
 
     @property
     def dim(self):
@@ -37,7 +37,7 @@ class Fit (object):
 
     @property
     def f(self):
-        return _f
+        return self._f
     @f.setter
     def f(self, func):
         self._f = func
@@ -54,14 +54,19 @@ class Fit (object):
         return self._y
     @y.setter
     def y(self, data):
-        self._y = data
+        self._y = np.array(data)
 
     @property
-    def bestval(self):
-        return _val
+    def parm(self):
+        return self._parm
     @property
-    def cover(self):
-        return _covar
+    def err(self):
+        return self._err
+
+    @property
+    def d(self):
+        return [self._f(xx, *self._val) for xx in self._x]
+
 
 def gaussian(x,a,b,c):
     return a * np.exp(-(x-b)**2/2./c**2)
