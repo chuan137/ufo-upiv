@@ -19,11 +19,21 @@
 
 #include <math.h>
 #include <string.h>
+#include <glib/gprintf.h>
+#include <gsl/gsl_vector.h>
+#include <gsl/gsl_blas.h>
 #include <gsl/gsl_multifit_nlin.h>
 
 #include "ufo-azimuthal-test-task.h"
 #include "ufo-ring-coordinates.h"
 
+#define SHOWMESSAGE
+#undef SHOWMESSAGE
+
+#define MAX_THREAD_NUM 16
+#define MAX_HIST_LEN 32
+#define FIT_DATA_SIZE 5
+#define FIT_DATA_SIZE_HALF (FIT_DATA_SIZE/2)
 
 struct _UfoAzimuthalTestTaskPrivate {
     guint radii_range;
@@ -111,75 +121,119 @@ get_coords(int *left, int *right, int *top, int *bot, int rad,
     *bot = min (b, img_height - 1);
 }
 
-static float
-compute_intensity (float *image, int r, int center_x, int center_y, int img_width, int img_height, int radii_range)
+static void compute_background(float *mean, float *std, 
+                        float *img, int center_x, int center_y,
+                        int min_r, int max_r, int img_width, int img_height)
 {
-    int left, right, top, bot;
-    get_coords(&left, &right, &top, &bot, r + radii_range, center_x, center_y, img_width, img_height);
-    
-    unsigned counter = 0;
-    float intensity = 0;
-
-    for (int y = top; y <= bot; ++y) {
-        for (int x = left; x <= right; ++x) {
-            int xx = (x - center_x) * (x - center_x);
-            int yy = (y - center_y) * (y - center_y);
-            /* Check if point is on ring */
-            if (fabs (sqrtf ((float) (xx + yy)) - (float) r) < 0.5) {
-                intensity += image[x + y * img_width];
-                ++counter;
-            } 
-        }
+    int x0, x1, y0, y1;
+    int i,j,ii,jj,k,idx;
+    float bk[300], mm=0, ss=0;
+    get_coords(&x0, &x1, &y0, &y1, max_r, center_x, center_y, img_width, img_height);
+    k=0;
+    for (i = x0; i < x1; i++) for (j = y0; j < y1 && k < 300; j++) {
+    /*for (i = x0; i < x1; i++) for (j = y0; j < y1; j++) {*/
+        ii = i - center_x;
+        jj = j - center_y;
+        if (abs(ii) < min_r && abs(jj) < min_r) continue;
+        idx = i + j * img_width;
+        if (img[idx] == 0.0f) continue;
+        bk[k] = img[idx];
+        mm += bk[k];
+        /*g_message("%f", bk[k]);*/
+        k++;
     }
-
-    /*return intensity;*/
-    if(counter != 0)
-        return intensity / (float) counter;
-    else {
-        return 0;
+    if (k == 0) {
+        *mean = 0;
+        *std = 0;
+    } else {
+        mm /= k;
+        for (i = 0; i < 300; i++) ss += (bk[i]-mm)*(bk[i]-mm);
+        *mean = mm;
+        *std = sqrt(ss/k);
     }
-
+    /*g_message("%d, %f %f %f", k, *mean, *std, ss);*/
 }
 
-static int
-find_peak (float *data, int num) {
-    int pos = 0;
-    float alpha = 1.05;
-#if 0
-    for (int i = num - 3; i > 1; i--) {
-        float d0 = 0.5 * (data[i-1] + data[i]);
-        if (d0 > 1.005 * data[i+1] && d0 > 1.005 * data[i-2]) {
-            pos = data[i] > data[i-1] ? i : i - 1;
-            break;
+static void
+compute_histogram(float *histogram, float *h, float *img, int center_x, int center_y,
+                        int min_r, int max_r, int img_width, int img_height)
+{
+    int x0, x1, y0, y1;
+    int r,i,j,ii,jj,idx;
+
+    get_coords(&x0, &x1, &y0, &y1, max_r, center_x, center_y, img_width, img_height);
+
+    for (i = x0; i < x1; i++) for (j = y0; j < y1; j++) {
+        idx = i + j * img_width;
+        ii = i - center_x;
+        jj = j - center_y;
+        if (abs(ii) < 0.7*min_r && abs(jj) < 0.7*min_r) continue;
+        r = (int) roundf(sqrt(ii*ii+jj*jj));
+
+        if (r >= min_r && r <= max_r) {
+            histogram[r - min_r] +=  img[idx];
+            h[r - min_r] += 1;
         }
     }
-#else
-    while (pos==0 && alpha > 1.0001) {
-        for (int i = 2; i < num - 3; i++) {
-            float d0 = 0.5 * (data[i] + data[i+1]);
-            if (d0 > alpha * data[i+2] && d0 > alpha * data[i-1]) {
-                pos = data[i] > data[i+1] ? i : i + 1;
+
+    for (r = 0; r < max_r - min_r + 1; r++) histogram[r] /= h[r];
+
+#if 0
+    // smooth histogram 
+    memset(h, 0, MAX_HIST_LEN * sizeof(*h));
+    for (int i = 1; i < max_r - min_r; i++)
+        h[i] = 0.5 * histogram[i] + 0.25 * (histogram[i+1] + histogram[i-1]);
+    h[0] = 0.5*histogram[0] + 0.5*histogram[1];
+    h[max_r-min_r] = 0.5*histogram[max_r-min_r-1] + 0.5*histogram[max_r-min_r];
+    memcpy(histogram, h, MAX_HIST_LEN * sizeof(*h));
+#endif
+}
+
+static float array_mean(float *array, int max) {
+    float res = 0;
+    float ct = 0;
+    for (int i=0; i < max; i++) {
+        if (array[i] != 0.0f) {
+            res += array[i];
+            ct++;
+        }
+    }
+    return res/ct;
+}
+
+static float array_std(float *array, float mean, int max) {
+    float res = 0;
+    float ct = 0;
+    for (int i=0; i < max; i++) {
+        if (array[i] != 0.0f) {
+            res += (array[i]-mean)*(array[i]-mean);
+            ct++;
+        }
+    }
+    return sqrt(res/ct);
+}
+
+static int search_peaks(float *data, int *peaks, int wlen)
+{
+    int peak, i, j, k=0;
+    for (i = 0; i < MAX_HIST_LEN - wlen - 1; i++) {
+        peak = 0;
+        for (j = i; j < i + wlen - 1; j++)
+            if (data[j] >= data[j+1]) {
+                peak = j;
                 break;
             }
-        }
-        g_message("alpha: %f", alpha);
-        alpha = 1.0f + (alpha - 1)/2.0f;
+        for (; j < i + wlen - 1; j++)
+            if (data[j] <= data[j+1]) break;
+        if (peak != i + wlen/2 || j != i + wlen - 1 ||
+                data[j] == 0.0f || data[i] == 0.0f) continue;
+        h[k++] = peak;
     }
-    g_message("alpha: %f, pos: %d", alpha, pos);
-#endif
-    /*
-     *for (int i = num - 3; i > 1; i--) {
-     *    float d0 = data[i];
-     *    if (d0 > 1.005 * data[i+1] && d0 > 1.005 * data[i-1]) {
-     *        pos = i;
-     *        break;
-     *    }
-     *}
-     */
-    return pos;
+    return k;
 }
 
-struct fitting_data {
+struct fitting_data 
+{
     size_t n;
     float *y;
 };
@@ -218,6 +272,7 @@ static int gaussian_df (const gsl_vector *x, void *data, gsl_matrix *J)
         gsl_matrix_set (J, i, 1, A * e * (t-mu) / (sig*sig) );
         gsl_matrix_set (J, i, 2, A * e * (t-mu)*(t-mu) / (sig*sig*sig) );
     }
+
     return GSL_SUCCESS;
 }
 
@@ -228,184 +283,186 @@ static int gaussian_fdf (const gsl_vector *x, void *data, gsl_vector *f, gsl_mat
     return GSL_SUCCESS;
 }
 
-
-G_LOCK_DEFINE(binary_pic);
-
-typedef struct _gaussian_thread_data{
+typedef struct _gaussian_thread_data
+{
     int tid;
-   
     UfoAzimuthalTestTaskPrivate *priv;
     UfoRingCoordinate* ring;
-   
+    UfoRingCoordinate* winner;
     float* image;   // input image
-    short* binary_pic; //Matrix of done pixels
     int img_width;
     int img_height;
-
     int tmp_S;
-    UfoRingCoordinate* winner;
-     
-    GMutex* mutex;
 } gaussian_thread_data;
 
-#define HIST_MAX_LEN 32
+static gint cmp_intensity_reverse (gconstpointer a, gconstpointer b)
+{
+    const UfoRingCoordinate *ra = (const UfoRingCoordinate *) a;
+    const UfoRingCoordinate *rb = (const UfoRingCoordinate *) b;
+    return ra->intensity > rb->intensity ? 1 : -1;
+}
+
+static void print_histogram (int center_x, int center_y, int min_r, int max_r, float *histogram)
+{
+    g_message(                                                          
+        "(%3d,%3d)[%2d,%2d]: histogram\
+        \n\t\t%8.2e, %8.2e, %8.2e, %8.2e, %8.2e,\
+        \n\t\t%8.2e, %8.2e, %8.2e, %8.2e, %8.2e,\
+        \n\t\t%8.2e, %8.2e, %8.2e, %8.2e, %8.2e,\
+        \n\t\t%8.2e, %8.2e, %8.2e, %8.2e, %8.2e,\
+        \n\t\t%8.2e, %8.2e, %8.2e, %8.2e, %8.2e,\
+        \n\t\t%8.2e, %8.2e, %8.2e, %8.2e, %8.2e,\
+        \n\t\t%8.2e, %8.2e",
+        center_x, center_y, min_r, max_r,
+        histogram[0], histogram[1], histogram[2], histogram[3], histogram[4],
+        histogram[5], histogram[6], histogram[7], histogram[8], histogram[9],
+        histogram[10], histogram[11], histogram[12], histogram[13], histogram[14],
+        histogram[15], histogram[16], histogram[17], histogram[18], histogram[19],
+        histogram[20], histogram[21], histogram[22], histogram[23], histogram[24],
+        histogram[25], histogram[26], histogram[27], histogram[28], histogram[29],
+        histogram[30], histogram[31]);
+}
+
+static void print_peaks(int center_x, int center_y, int *peaks, float* h)
+{
+    const char *fmt =
+        "(%3d,%3d): peaks = %2d,%2d,%2d,%2d,%2d\t%.2f,%.2f,%.2f,%.2f,%.2f";
+    float h0 = peaks[0] == 0.0f ? 0.0 : h[peaks[0]];
+    float h1 = peaks[1] == 0.0f ? 0.0 : h[peaks[1]];
+    float h2 = peaks[2] == 0.0f ? 0.0 : h[peaks[2]];
+    float h3 = peaks[3] == 0.0f ? 0.0 : h[peaks[3]];
+    float h4 = peaks[4] == 0.0f ? 0.0 : h[peaks[4]];
+    g_message(fmt, center_x, center_y,
+            peaks[0], peaks[1], peaks[2], peaks[3], peaks[4],
+            h0,h1,h2,h3,h4);
+}
+
+static void print_ring (UfoRingCoordinate *ring)
+{
+    g_message("(%5.1f,%6.1f,%6.1f): likelihood = %10.2f, azimu_test = %+8.4f",
+            ring->x, ring->y, ring->r, ring->contrast, ring->intensity);
+}
+
+typedef struct _azimu_data {
+    int x;
+    int y;
+    int r;
+    float height;
+    float snr;
+} azimu_data;
 
 static void gaussian_thread(gpointer data, gpointer user_data)
 {
-    int status;
-    float histogram[HIST_MAX_LEN];
-    float h[HIST_MAX_LEN];
-
-    //Thread copying
     gaussian_thread_data *parm = (gaussian_thread_data*) data;
 
     float *image = parm->image;
     int img_width = parm->img_width;
     int img_height = parm->img_height;
-    /*short* binary_pic = parm->binary_pic;*/
-    UfoRingCoordinate* ring =  parm->ring;
+    UfoRingCoordinate* ring = parm->ring;
     unsigned radii_range = parm->priv->radii_range;
     int displacement = parm->priv->displacement;
+
+    int ct, num_peaks; 
+    int num_test = (2*displacement+1)*(2*displacement+1);
+    int peaks[MAX_HIST_LEN];
+    float h[MAX_HIST_LEN], h2[MAX_HIST_LEN];
+    float histogram[num_test*MAX_HIST_LEN];
+    azimu_data azimu[num_test];
+
+    /*UfoRingCoordinate best_rings[4];*/
+
+#ifdef SHOWMESSAGE
+    g_message(" ");
+    print_ring(ring);
+#endif
 
     // decide range of data to be considered in the fitting procedure
     // Since we aim at outer rings, keep the search range on the inner side strict,
     // and relax outer search range. This will help increase the probablility for
     // finding the peak position of the outer ring.
     int min_r = ring->r - radii_range;      
-    int max_r = ring->r + radii_range + 6;  
-    min_r = (min_r < 1) ? 1 : min_r;
+    int max_r = ring->r + radii_range + MAX(4,(int)(0.2*ring->r));  
+    min_r = MAX(min_r, (int)ring->r/2);
 
-    // initialize Gaussian fitting solver
-    int nd = max_r - min_r + 1;
-    int np = 3;
+    if (max_r - min_r + 1 > MAX_HIST_LEN) max_r = MAX_HIST_LEN - min_r + 1;
 
-    const gsl_multifit_fdfsolver_type *T;
-    gsl_multifit_fdfsolver *s;
-    gsl_multifit_function_fdf f;
-    gsl_vector_view view;
-    gsl_matrix *covar;
+    // background
+    float bk, bks;
+    memset (h, 0, MAX_HIST_LEN * sizeof(*h));
+    memset (h2, 0, MAX_HIST_LEN * sizeof(*h2));
+    compute_histogram(h2, h, image, ring->x, ring->y, max_r, max_r+20, img_width, img_height);
+    bk = array_mean(h2, MAX_HIST_LEN);
+    bks = array_std(h2, bk, MAX_HIST_LEN);
 
-    f.f = &gaussian_f;
-    f.df = &gaussian_df;
-    f.fdf = &gaussian_fdf;
-    f.n = nd;
-    f.p = np;
-
-    T = gsl_multifit_fdfsolver_lmsder;
-    s = gsl_multifit_fdfsolver_alloc(T, nd, np);
-    covar = gsl_matrix_alloc (np, np);
-
-    // loop through neighbour pixels and fit azimuthal histogram
-    float ratio_max = 0.0f;
+    // compute azimuthal histogram
+    ct = -1;
     for (int j = - displacement; j < displacement + 1; j++) {
-        for (int k = - displacement; k < displacement + 1; k++) {
-            g_message("\n");
+    for (int k = - displacement; k < displacement + 1; k++) {
+        float *hist = histogram + (++ct) * MAX_HIST_LEN;
+        int center_x = ring->x + j;
+        int center_y = ring->y + k;
 
-            memset (histogram, 0, HIST_MAX_LEN * sizeof(*h));
-            memset (h, 0, HIST_MAX_LEN * sizeof(*h));
+        memset (hist, 0, MAX_HIST_LEN * sizeof(*hist));
+        memset (h, 0, MAX_HIST_LEN * sizeof(*h));
+        memset (peaks, 0, MAX_HIST_LEN * sizeof(*peaks));
+        azimu[ct] = (azimu_data) {center_x, center_y, 0, 0.0f, 0.0f};
 
-            int rr;
-            int peak_pos, peak_r;
-            int center_x = ring->x + k;
-            int center_y = ring->y + j;
+        compute_histogram(hist, h, image, 
+                center_x, center_y, min_r, max_r, img_width, img_height);
+        num_peaks = search_peaks(hist, peaks, FIT_DATA_SIZE);
 
-            for(int r = min_r; r <= max_r; r++)
-                histogram[r - min_r] = compute_intensity(image, r, 
-                        center_x, center_y, img_width, img_height, radii_range);
-
-            // smoothing histogram
-            for (int r = 1; r < max_r - min_r; r++)
-                h[r] = 0.5 * histogram[r] + 0.25 * (histogram[r+1] + histogram[r-1]);
-            /*for (int r = 0; r < max_r - min_r + 1; r++)*/
-                /*histogram[r] = h[r];*/
-
-            memcpy(histogram, h, HIST_MAX_LEN * sizeof(*h));
-            memset(h, 0, HIST_MAX_LEN * sizeof(*h));
-
-            peak_pos = find_peak(histogram, max_r-min_r+1);
-            peak_r = min_r + peak_pos;
-
-            g_message("(%3d, %3d): r0 = %d, min_r = %d, max_r = %d, peak_r = %d, peak_pos = %d", 
-                    (int)ring->x + k, (int)ring->y + j, 
-                    (int)ring->r, min_r, max_r, peak_r, peak_pos);
-            g_message(                                                          
-                "histogram\
-                \n\t\t%8.2f, %8.2f, %8.2f, %8.2f, %8.2f,\
-                \n\t\t%8.2f, %8.2f, %8.2f, %8.2f, %8.2f,\
-                \n\t\t%8.2f, %8.2f, %8.2f, %8.2f, %8.2f,\
-                \n\t\t%8.2f, %8.2f, %8.2f, %8.2f, %8.2f,\
-                \n\t\t%8.2f, %8.2f, %8.2f, %8.2f, %8.2f,\
-                \n\t\t%8.2f, %8.2f, %8.2f, %8.2f, %8.2f,\
-                \n\t\t%8.2f, %8.2f",
-                histogram[0], histogram[1], histogram[2], histogram[3], histogram[4],
-                histogram[5], histogram[6], histogram[7], histogram[8], histogram[9],
-                histogram[10], histogram[11], histogram[12], histogram[13], histogram[14],
-                histogram[15], histogram[16], histogram[17], histogram[18], histogram[19],
-                histogram[20], histogram[21], histogram[22], histogram[23], histogram[24],
-                histogram[25], histogram[26], histogram[27], histogram[28], histogram[29],
-                histogram[30], histogram[31]);
-
-            if (peak_pos <= 2 || peak_pos >= max_r - min_r - 1) continue;
-
-            rr = 0;
-            for (int r = peak_pos - 2; r < peak_pos + 3; r++, rr++) {
-                h[rr] = histogram[r];
+        // highest peak
+        float p = -1.0f;
+        for (int i = 0; i < num_peaks; i++) {
+            if (hist[peaks[i]] > p) {
+                p = hist[peaks[i]];
+                azimu[ct].r = peaks[i];
             }
+        }
 
-            struct fitting_data d = {5, h};
-            f.params = &d;
-
-            // initial values for fitting parameter
-            double x_init[] = {h[2], 2, 2};
-            view = gsl_vector_view_array(x_init, 3);
-
-            gsl_multifit_fdfsolver_set(s, &f, &view.vector);
-
-            int iter = 0;
-            do{
-                iter++;
-                status = gsl_multifit_fdfsolver_iterate(s);
-                if(status) break;
-                status = gsl_multifit_test_delta(s->dx, s->x, 1e-4, 1e-4);
-            } while (status == GSL_CONTINUE && iter < 50);
-
-            gsl_multifit_covar (s->J, 0.0, covar);
-
-#define FIT(i) gsl_vector_get(s->x, i)
-#define ERR(i) sqrt(gsl_matrix_get(covar,i,i))
-                
-            float parm_A = FIT(0);
-            float parm_mu = FIT(1);
-            float parm_sig = FIT(2);
-            float err_A = ERR(0);
-            float err_mu = ERR(1);
-            float err_sig = ERR(2);
-            float ratio  = fabs(parm_A/parm_sig);
-
-            if (ratio > ratio_max) {
-                ratio_max = ratio;
-                parm->winner->x = (int) ring->x + k;
-                parm->winner->y = (int) ring->y + j;
-                parm->winner->r = peak_r + 2 - parm_mu;
-                parm->winner->contrast = ring->contrast;
-                /*if (parm_mu > 0.0f && parm_mu < 5.0f && parm_sig < 8.0f) {*/
-                if (parm_mu > 0.0f && err_sig < 0.9f * parm_sig) {
-                    parm->winner->intensity = ratio;
-                } else {
-                    parm->winner->intensity = -ratio;
-                }
+        if (azimu[ct].r > 0) {
+            for (int i = azimu[ct].r; 
+                    i < azimu[ct].r + FIT_DATA_SIZE; i++) {
+                azimu[ct].snr += hist[i] - bk;
             }
+            azimu[ct].snr /=  (bks * FIT_DATA_SIZE);
+            azimu[ct].height = hist[azimu[ct].r];
+            azimu[ct].r += min_r;
+        }
 
-            
+#ifdef SHOWMESSAGE
+        print_histogram(center_x,center_y,min_r,max_r,hist);
+        print_histogram(center_x,center_y,max_r,max_r+20,h2);
+        print_peaks(center_x, center_y, p, hist);
+        g_message("(%3d,%3d): %2d %6.2f %6.2f",
+            azimu[ct].x, azimu[ct].y, azimu[ct].r, azimu[ct].height, azimu[ct].snr);
+        g_message("%f %f", bk, bks);
+#endif
+    }}
 
-            g_message("h = %.5f, %.5f, %.5f, %.5f, %.5f, ", h[0], h[1], h[2], h[3], h[4]);
-            g_message( "A = %.5f (%.5f), sig = %.5f (%.5f), mu = %.5f (%.5f), A/sig = %.5f", 
-                parm_A, err_A, parm_sig, err_sig, parm_mu, err_mu, ratio);
+    ct = 0;
+    UfoRingCoordinate ring0 = {0,0,0,ring->contrast,0};
+    for (int i = 0; i < num_test; i++) {
+        if (abs(azimu[i].r - (int)ring->r) <= 3) {
+            ring0.x += azimu[i].x;
+            ring0.y += azimu[i].y;
+            ring0.r += azimu[i].r;
+            ring0.intensity += azimu[i].snr;
+            ct++;
         }
     }
+    ring0.x /= ct;
+    ring0.y /= ct;
+    ring0.r /= ct;
+    ring0.intensity /= ct;
+
+#ifdef SHOWMESSAGE
+    print_ring (&ring0);
+#endif
+
+    *ring = ring0;
 }
 
-#define NUM_MAX_THREAD 1
 static gboolean
 ufo_azimuthal_test_task_process (UfoTask *task,
                          UfoBuffer **inputs,
@@ -433,50 +490,40 @@ ufo_azimuthal_test_task_process (UfoTask *task,
             cand[i].r *= priv->scale;
         }
 
-    /*short* binary_pic = g_malloc0(sizeof(short) * img_width *img_height);*/
-    gaussian_thread_data thread_data[num_cand];
-    UfoRingCoordinate results[num_cand];
-
     GError *err;
     GThreadPool *thread_pool = NULL;
-    thread_pool = g_thread_pool_new((GFunc) gaussian_thread, NULL, NUM_MAX_THREAD, TRUE,&err);
-
-    /*static GMutex mutex = G_STATIC_MUTEX_INIT;*/
+    thread_pool = g_thread_pool_new((GFunc) gaussian_thread, NULL, MAX_THREAD_NUM, TRUE,&err);
+    gaussian_thread_data thread_data[num_cand];
 
     for (unsigned i = 0; i < num_cand; i++) {
         thread_data[i].tid = i;
         thread_data[i].priv = priv;
         thread_data[i].ring = &cand[i];
         thread_data[i].image = image;
-        /*thread_data[i].binary_pic = binary_pic;*/
         thread_data[i].img_width = img_width;
         thread_data[i].img_height = img_height;
-        thread_data[i].winner = &results[i];
-        /*thread_data[i].mutex = &mutex;*/
-        
-        g_thread_pool_push(thread_pool, &thread_data[i],&err); 
+        g_thread_pool_push(thread_pool, &thread_data[i], &err); 
     }
 
     g_thread_pool_free(thread_pool, FALSE, TRUE);
 
     float *res = ufo_buffer_get_host_array(output, NULL);
-
-    UfoRingCoordinate *rings = (UfoRingCoordinate*) &res[1];
+    UfoRingCoordinate *rings = (UfoRingCoordinate*) &res[2];
 
     int num = 0;
     for(unsigned i=0; i < num_cand;i++) {
-        if (results[i].intensity > 0.0f) {
-            rings[num] = results[i];
+        if (cand[i].intensity  > 5.0f || cand[i].contrast > 500.0f) {
+            rings[num] = cand[i];
             num++;
         }
     }
     res[0] = num;
+    res[1] = 1;
     
     /*req.n_dims = 1;*/
-    /*req.dims[0] = 1 + num * sizeof(UfoRingCoordinate) / sizeof(float);*/
+    /*req.dims[0] = 2 + num * sizeof(UfoRingCoordinate) / sizeof(float);*/
     /*ufo_buffer_resize(output, &req);*/
 
-    /*g_free(binary_pic);*/
     return TRUE;
 }
 
@@ -491,7 +538,7 @@ ufo_azimuthal_test_task_set_property (GObject *object,
     switch (property_id) {
         case PROP_SCALE:
             priv->scale = g_value_get_uint(value);
-            priv->displacement = priv->scale;
+            /*priv->displacement = priv->scale;*/
             break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -559,7 +606,197 @@ static void
 ufo_azimuthal_test_task_init(UfoAzimuthalTestTask *self)
 {
     self->priv = UFO_AZIMUTHAL_TEST_TASK_GET_PRIVATE(self);
-    self->priv->radii_range = 10;
+    self->priv->radii_range = 6;
     self->priv->displacement = 1;
     self->priv->scale = 1;
 }
+
+    // initialize Gaussian fitting solver
+    /*int nd = FIT_DATA_SIZE;*/
+    /*int np = 3;*/
+
+    /*const gsl_multifit_fdfsolver_type *T = gsl_multifit_fdfsolver_lmsder;*/
+    /*gsl_multifit_fdfsolver *s = gsl_multifit_fdfsolver_alloc(T, nd, np);*/
+    /*gsl_matrix *parm_covar = gsl_matrix_alloc (np, np);*/
+
+    /*gsl_multifit_function_fdf f;*/
+    /*f.f = &gaussian_f;*/
+    /*f.df = &gaussian_df;*/
+    /*f.fdf = &gaussian_fdf;*/
+    /*f.n = nd;*/
+    /*f.p = np;*/
+
+
+    /*// initialize the list for best rings*/
+    /*GList *br_list = NULL;*/
+    /*for (int i = 0; i < 4; i++) {*/
+        /*best_rings[i] = r0;*/
+        /*br_list = g_list_prepend(br_list, &best_rings[i]);*/
+    /*}*/
+
+    /*for (int j = - displacement; j < displacement + 1; j++) {*/
+    /*for (int k = - displacement; k < displacement + 1; k++) {*/
+        /*memset (histogram, 0, MAX_HIST_LEN * sizeof(*histogram));*/
+        /*memset (h, 0, MAX_HIST_LEN * sizeof(*h));*/
+
+        /*int center_x = ring->x + j;*/
+        /*int center_y = ring->y + k;*/
+
+        /*[>compute_histogram(histogram, h, image, center_x, center_y, <]*/
+                    /*[>min_r, max_r, img_width, img_height);<]*/
+
+
+/*#if 1 */
+        /*memcpy (h, histogram, MAX_HIST_LEN * sizeof(*h));*/
+/*#else*/
+        /*#endif*/
+
+        /*memset (peaks, 0, MAX_HIST_LEN * sizeof(*peaks));*/
+        /*search_peaks(h, peaks, FIT_DATA_SIZE-1);*/
+
+        /*// choose the highest peak*/
+        /*float peak_h = 0;*/
+        /*int peak = -1;*/
+        /*int i = -1;*/
+        /*while (peaks[++i] > 0 && i < MAX_HIST_LEN) {*/
+            /*if (histogram[peaks[i]] > peak_h) {*/
+                /*peak = peaks[i];*/
+                /*peak_h = histogram[peak];*/
+            /*}*/
+        /*}*/
+
+
+        /*if (peak == -1) continue; // no peak found*/
+        /*if (abs(peak+min_r - ring->r) > 4) continue; // peak off the expectation*/
+
+        /*// set fitting data*/
+        /*struct fitting_data d = */
+                /*{FIT_DATA_SIZE, &histogram[peak-FIT_DATA_SIZE_HALF]};*/
+        /*f.params = &d;*/
+
+        /*// set initial parameter guess*/
+        /*double parm_init[] = {histogram[peak], FIT_DATA_SIZE_HALF, 1};*/
+        /*gsl_vector_view parm_view = gsl_vector_view_array(parm_init, 3);*/
+        /*gsl_multifit_fdfsolver_set(s, &f, &parm_view.vector);*/
+
+        /*// fitting*/
+        /*int iter=0;*/
+        /*do{*/
+            /*iter++;*/
+            /*status = gsl_multifit_fdfsolver_iterate(s);*/
+            /*if(status) break;*/
+            /*status = gsl_multifit_test_delta(s->dx, s->x, 1e-4, 1e-4);*/
+        /*} while (status == GSL_CONTINUE && iter < 50);*/
+
+        /*// chi square*/
+        /*gsl_multifit_covar (s->J, 0.0, parm_covar);*/
+        /*float chi = gsl_blas_dnrm2(s->f);*/
+        /*float dof = nd - np;*/
+        /*float c = chi / sqrt(dof);*/
+
+/*#define FIT(i) gsl_vector_get(s->x, i)*/
+/*#define ERR(i) sqrt(gsl_matrix_get(parm_covar,i,i))*/
+        /*float parm_A = FIT(0);*/
+        /*float parm_sig = FIT(2);*/
+        /*float err_mu = c * ERR(1);*/
+        /*float ratio  = fabs(parm_A/parm_sig);*/
+
+        /*// discard if error of mu is large*/
+        /*[>if (err_mu > 0.3f) continue;<]*/
+            
+        /*// maintain a list of best fitted rings, reverse ordered*/
+        /*// replace the first one in list if ratio is higher*/
+        /*r = (UfoRingCoordinate*) br_list->data;*/
+        /*if (r->intensity < ratio) {*/
+            /*r->x = center_x;*/
+            /*r->y = center_y;*/
+            /*r->r = peak + min_r;*/
+            /*r->contrast = ring->contrast;*/
+            /*r->intensity = ratio;*/
+        /*}*/
+        /*br_list = g_list_sort(br_list, cmp_intensity_reverse);*/
+
+        /*float parm_mu = FIT(1);*/
+        /*float err_A = c * ERR(0);*/
+        /*float err_sig = c * ERR(2);*/
+/*#ifdef SHOWMESSAGE*/
+        /*g_message(*/
+            /*"(%3d,%3d,%3d(%3d)): %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f,\tA =%6.3f(%6.3f), mu =%6.3f(%6.3f), sig =%6.3f(%6.3f)  %6.3f",*/
+            /*center_x, center_y, peak+min_r, (int)ring->r,*/
+            /*histogram[peak-3], histogram[peak-2],*/
+            /*histogram[peak-1], histogram[peak-0],*/
+            /*histogram[peak+1], histogram[peak+2],*/
+            /*histogram[peak+3],*/
+            /*parm_A, err_A, parm_mu, err_mu, parm_sig, err_sig, ratio);*/
+/*#endif*/
+/*#ifndef SHOWMESSAGE*/
+/*#endif*/
+    /*}} // displacement loop*/
+
+    /*br_list = g_list_reverse(br_list);*/
+/*#ifndef SHOWMESSAGE*/
+    /*for (GList *l=br_list; l; l=l->next) {*/
+        /*r = (UfoRingCoordinate*)(l->data);*/
+        /*g_message("(%3d,%3d,%3d): likelihood = %f, azimu_test = %f",*/
+                /*(int)r->x, (int)r->y, (int)r->r, r->contrast, r->intensity);*/
+    /*}*/
+/*#endif*/
+
+    /*int number = 0;*/
+    /**ring = r0;*/
+    /*for (GList *l=br_list; l; l=l->next) {*/
+        /*r = (UfoRingCoordinate*)(l->data);*/
+        /*if (r->intensity == 0) break;*/
+        /*number++;*/
+        /*ring->intensity += r->intensity;*/
+        /*ring->x += r->x * r->intensity;*/
+        /*ring->y += r->y * r->intensity;*/
+        /*ring->r += r->r * r->intensity;*/
+    /*}*/
+    /*if (number > 0) {*/
+        /*ring->x /= ring->intensity;*/
+        /*ring->y /= ring->intensity;*/
+        /*ring->r /= ring->intensity;*/
+        /*ring->intensity /= number;*/
+    /*} else {*/
+        /*r0.contrast = ring->contrast;*/
+        /**ring = r0;*/
+    /*}*/
+
+    /*[>r0.contrast = ring->contrast;<]*/
+    /*[>*ring = r0;<]*/
+
+    /*[>min_r = max_r;<]*/
+    /*[>max_r = 0;<]*/
+
+
+    /*[>br_list = g_list_reverse(br_list);<]*/
+    /*[>float max_azimu = ((UfoRingCoordinate*)(br_list->data))->intensity;<]*/
+
+    /*[>for (GList *l=br_list; l; l=l->next) {<]*/
+        /*[>r = (UfoRingCoordinate*)(l->data);<]*/
+
+        /*[>if (r->intensity < 0.9*max_azimu) break;<]*/
+        /*[>number++;<]*/
+        
+        /*[>// find max_r and min_r from br_list<]*/
+        /*[>max_r = max_r > (int)r->r ? max_r : r->r;<]*/
+        /*[>min_r = min_r < (int)r->r ? min_r : r->r;<]*/
+
+    /*[>}<]*/
+
+    /*[>if (max_r - min_r < 3) {<]*/
+        /*[>ring->x /= ring->intensity;<]*/
+        /*[>ring->y /= ring->intensity;<]*/
+        /*[>ring->r /= ring->intensity;<]*/
+        /*[>ring->intensity /= number;<]*/
+    /*[>} else {<]*/
+        /*[>*ring = r0;<]*/
+    /*[>}<]*/
+
+    /*g_message("(%6.2f,%6.2f,%6.2f): likelihood = %f, azimu_test = %f",*/
+            /*ring->x, ring->y, ring->r, ring->contrast, ring->intensity);*/
+
+    /*gsl_multifit_fdfsolver_free (s);*/
+    /*gsl_matrix_free (parm_covar);*/
+
