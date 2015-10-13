@@ -227,7 +227,7 @@ static int search_peaks(float *data, int *peaks, int wlen)
             if (data[j] <= data[j+1]) break;
         if (peak != i + wlen/2 || j != i + wlen - 1 ||
                 data[j] == 0.0f || data[i] == 0.0f) continue;
-        h[k++] = peak;
+        peaks[k++] = peak;
     }
     return k;
 }
@@ -433,7 +433,7 @@ static void gaussian_thread(gpointer data, gpointer user_data)
 #ifdef SHOWMESSAGE
         print_histogram(center_x,center_y,min_r,max_r,hist);
         print_histogram(center_x,center_y,max_r,max_r+20,h2);
-        print_peaks(center_x, center_y, p, hist);
+        print_peaks(center_x, center_y, peaks, hist);
         g_message("(%3d,%3d): %2d %6.2f %6.2f",
             azimu[ct].x, azimu[ct].y, azimu[ct].r, azimu[ct].height, azimu[ct].snr);
         g_message("%f %f", bk, bks);
@@ -451,10 +451,13 @@ static void gaussian_thread(gpointer data, gpointer user_data)
             ct++;
         }
     }
-    ring0.x /= ct;
-    ring0.y /= ct;
-    ring0.r /= ct;
-    ring0.intensity /= ct;
+
+    if (ct>0) {
+        ring0.x /= ct;
+        ring0.y /= ct;
+        ring0.r /= ct;
+        ring0.intensity /= ct;
+    }
 
 #ifdef SHOWMESSAGE
     print_ring (&ring0);
@@ -512,6 +515,7 @@ ufo_azimuthal_test_task_process (UfoTask *task,
 
     int num = 0;
     for(unsigned i=0; i < num_cand;i++) {
+        if (cand[i].intensity <= 0.0f) continue;
         if (cand[i].intensity  > 5.0f || cand[i].contrast > 500.0f) {
             rings[num] = cand[i];
             num++;
