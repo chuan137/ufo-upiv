@@ -145,18 +145,15 @@ static GList* filter_sort_candidate (GList *list)
         if (r->contrast == 0.0f) continue;
         for (GList *l = current->next; l; l=l->next) {
             UfoRingCoordinate *s = get_ring(l);
-            if (fabs(r->x - s->x) > 5)
-                break;
-            if (fabs(r->y - s->y) > 5)
-                break;
-            /*if (fabs(r->r - s->r) > 3)*/
-
-                /*break;*/
-            if (s->contrast > r->contrast) {
+            if (fabs(r->x - s->x) > 5) break;
+            if (fabs(r->y - s->y) > 5) continue;
+            if (fabs(r->r - s->r) > 5) continue;
+            if (r->contrast > s->contrast) {
+                s->contrast = 0.0f;
+            } else {
                 r->contrast = 0.0f;
                 break;
             }
-            s->contrast = 0.0f;
         }
     }
 
