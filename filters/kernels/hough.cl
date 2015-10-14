@@ -70,7 +70,7 @@ kernel void likelihood (read_only image3d_t input,
 
     barrier(CLK_LOCAL_MEM_FENCE);
 
-    float mean = 0.0f, std = 0.0f, f;
+    float mean = 0.0f, std = 0.0f, peak = 0.0f, f;
 
     for (int a = -maskSizeH; a < maskSizeH + 1; a++) {
         for (int b = -maskSizeH; b < maskSizeH + 1; b++) {
@@ -89,12 +89,21 @@ kernel void likelihood (read_only image3d_t input,
     }
     std = sqrt(std / maskNumOnes);
 
+#if 1
+    for (int a = -1; a <= 1; a++) for (int b = -1; b <= 1; b++) {
+        local_tmp_id = (loc_y + shift + b) * loc_mem_size_x + (loc_x + shift +a);
+        peak += local_mem[local_tmp_id];
+    }
+    peak /= 9.0f;
+#else
     local_tmp_id = (loc_y + shift) * loc_mem_size_x + (loc_x + shift);
-    f = local_mem[local_tmp_id];
+    peak = local_mem[local_tmp_id];
+#endif
+
+    float res = exp((peak - mean)/std);
     unsigned idx = glb_x 
                    + glb_y * get_global_size(0) 
                    + glb_z * get_global_size(0) * get_global_size(1);
-    float res = exp((f - mean)/std);
 
     output[idx] = res;
 }
