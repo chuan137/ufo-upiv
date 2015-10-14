@@ -34,7 +34,7 @@ struct _UfoRingPatternTaskPrivate {
     unsigned ring_step;
     unsigned width;
     unsigned height;
-    enum {GAUSSIAN, STEP, SKEW} method;
+    enum {GAUSSIAN, STEP, SKEW, SKEW2} method;
 };
 
 static void ufo_task_interface_init (UfoTaskIface *iface);
@@ -131,7 +131,7 @@ ufo_ring_pattern_task_generate (UfoTask *task,
     unsigned counter = 0;
     // ring distribution params
     float thick_h = (float) priv->ring_thickness / 2.0;
-    float sig = priv->ring_thickness;
+    float sig = priv->ring_thickness/2.0;
 
     for (int y = -(dimy / 2); y < dimy / 2; ++y) {
         for (int x = -(dimx / 2); x < dimx / 2; ++x) {
@@ -146,10 +146,13 @@ ufo_ring_pattern_task_generate (UfoTask *task,
                         out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] 
                             = exp(-dist*dist/(2.0*sig*sig));
                     } 
-                    else if (dist <= 2.0 * thick_h) 
-                        out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] 
-                            = - exp(-dist*dist/(2.0*sig*sig));
-                    else
+                    else if (dist <= 2.0 * thick_h) {
+                        ++counter;
+                        out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx]
+                            = -1;
+                        /*out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] */
+                            /*= - exp(-dist*dist/(2.0*sig*sig));*/
+                    } else
                         out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] = 0;
                     break;
                 case STEP:
@@ -166,6 +169,14 @@ ufo_ring_pattern_task_generate (UfoTask *task,
                         ++counter;
                         out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] = sign;
                     } else
+                        out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] = 0;
+                    break;
+                case SKEW2:
+                    if (dist <= thick_h) {
+                        ++counter;
+                        out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] 
+                            = sign * exp(-dist*dist/(2.0*sig*sig));
+                    } else 
                         out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] = 0;
                     break;
                 default:
@@ -332,7 +343,7 @@ ufo_ring_pattern_task_class_init (UfoRingPatternTaskClass *klass)
         g_param_spec_uint ("method",
                            "Method of generating ring boundary",
                            "Method of generating ring boundary",
-                           0, 2, 0,
+                           0, 3, 0,
                            G_PARAM_READWRITE);
 
     for (guint i = PROP_0 + 1; i < N_PROPERTIES; i++)
