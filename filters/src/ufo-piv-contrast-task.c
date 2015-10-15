@@ -170,15 +170,13 @@ static int prepare_test(gfloat* test, gfloat* input, int offset_x, int offset_y,
 static void approx_bg(gfloat* test, int size, float* m, float* s)
 {
     int ct;
-    float minv, maxv, low_cut, high_cut, std_old;
+    float low_cut, high_cut, std_old;
     float mean, std;
     
     ct = 0;
     std = 0.0f;
-    minv = array_min(test, size);
-    maxv = array_max(test, size);
-    low_cut = minv;
-    high_cut = maxv;
+    low_cut = array_min(test, size);
+    high_cut = array_max(test, size);
 
     while (ct < 10)
     {
@@ -188,10 +186,8 @@ static void approx_bg(gfloat* test, int size, float* m, float* s)
         std = array_std(test, size, mean, low_cut, high_cut);
         //printf("mean = %2.8f std = %2.8f; min = %2.8f max = %2.8f\n", mean, std, minv, maxv);
 
-        high_cut = maxv > mean + 2*std ? mean + 2*std : maxv;
-        low_cut = minv < mean - 2*std ? mean - 2*std : minv;
-        maxv = high_cut;
-        minv = low_cut;
+        high_cut = MIN(high_cut, mean + 2*std);
+        low_cut = MAX(low_cut, mean - 2*std);
 
         if (fabs(std - std_old) / std < 0.05)
             break;
@@ -216,7 +212,7 @@ ufo_piv_contrast_task_process (UfoTask *task,
     
     unsigned offset_x, offset_y, len_x, len_y, req_x, req_y;
     gfloat *in_mem, *test_mem;
-    gfloat mean, std;
+    gfloat mean, std, high;
     int n;
  
     req_x = requisition->dims[0];
@@ -232,6 +228,10 @@ ufo_piv_contrast_task_process (UfoTask *task,
     n = prepare_test(test_mem, in_mem, offset_x, offset_y, len_x, len_y, req_x, req_y);
     approx_bg(test_mem, n, &mean, &std);
     g_free(test_mem);
+    //g_message("PivContrast: %f, %f", mean, std);
+
+    gfloat *img = ufo_buffer_get_host_array(inputs[0], NULL);
+    high = array_max(img, req_x*req_y);
 
     priv = UFO_PIV_CONTRAST_TASK_GET_PRIVATE (task);
     node = UFO_GPU_NODE (ufo_task_node_get_proc_node (UFO_TASK_NODE (task)));
@@ -245,11 +245,10 @@ ufo_piv_contrast_task_process (UfoTask *task,
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 1, sizeof (cl_mem), &in_device));
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 2, sizeof (gfloat), &mean));
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 3, sizeof (gfloat), &std));
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 4, sizeof (gfloat), &priv->gamma));
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 5, sizeof (gfloat), &priv->c1));
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 6, sizeof (gfloat), &priv->c2));
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 7, sizeof (gfloat), &priv->c3));
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 8, sizeof (gfloat), &priv->c4));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 4, sizeof (gfloat), &high));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 5, sizeof (gfloat), &priv->gamma));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 6, sizeof (gfloat), &priv->c1));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->sigmoid_kernel, 7, sizeof (gfloat), &priv->c2));
 
     profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
     ufo_profiler_call (profiler, cmd_queue, priv->sigmoid_kernel, 1, &global_work_size, NULL);
@@ -354,7 +353,7 @@ ufo_piv_contrast_task_class_init (UfoPivContrastTaskClass *klass)
                             "c1",
                             "lower cut",
                             "lower cut relative to the background mean in unit of background standard deviation",
-                            -5.0f, 5.0f, -0.5f,
+                            -5.0f, 5.0f, 0.5f,
                             G_PARAM_READWRITE);
 
      properties[PROP_C2] = g_param_spec_float(
@@ -395,7 +394,7 @@ static void
 ufo_piv_contrast_task_init(UfoPivContrastTask *self)
 {
     self->priv = UFO_PIV_CONTRAST_TASK_GET_PRIVATE(self);
-    self->priv->c1 = -0.5f;
+    self->priv->c1 = 0.5f;
     self->priv->c2 = 10.0f;
     self->priv->c3 = 4.0f;
     self->priv->c4 = 2.0f;
