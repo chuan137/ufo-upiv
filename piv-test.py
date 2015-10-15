@@ -16,6 +16,7 @@ try:
     parms = cf.parms
     config = cf.config
 except:
+    print sys.exc_info()
     from config import parms, config
 
 class PivJob(PivJob):
@@ -25,10 +26,12 @@ class PivJob(PivJob):
         sc = self.parms.scale
 
         self.add_task('crop', x=p.xshift, y=p.yshift, width=p.width, height=p.height)
-        # self.add_task('contrast', 'piv_contrast', 
-                # c1=p.contrast_c1, c2=p.contrast_c2,
-                # c3=p.contrast_c3, c4=p.contrast_c4)
-        self.add_task('contrast')
+        if 1:
+            self.add_task('contrast', 'piv_contrast', 
+                    c1=p.contrast_c1, c2=p.contrast_c2,
+                    gamma=p.contrast_gamma)
+        else:
+            self.add_task('contrast')
         self.add_task('rescale', factor=1.0/sc)
         self.add_task('input_fft', 'fft', dimensions=2)
         self.add_copy_task('bc_image') 
@@ -49,7 +52,8 @@ class PivJob(PivJob):
         self.add_task('cand', 'candidate-filter', 
                 threshold=p.candi_threshold, ring_start=p.ring_start, 
                 ring_step=p.ring_step, ring_end=p.ring_end, scale=p.scale )
-        self.add_task('azimu', 'azimuthal-test', scale=p.scale)
+        self.add_task('azimu', 'azimuthal-test', thread=p.threads,
+                azimu_thld = p.azimu_thld, likelihood_thld = p.azimu_thld_likelihood)
 
     def setup_graph(self, flag):
         if flag==0 or flag=='azimu':

@@ -12,7 +12,7 @@ try:
 except IndexError:
     sys.exit('no image file is appointed')
 except IOError:
-    sys.exit('correct path?')
+    sys.exit('correct path? %s' % sys.argv[1])
 except ValueError:
     sys.exit('require tif file')
 except:

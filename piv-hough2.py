@@ -10,12 +10,12 @@ import logging
 logfile = '.hough.log'
 logging.basicConfig(level=logging.DEBUG, filename=logfile, filemode='w', 
                     format='%(name)s %(levelname)s %(message)s')
-
 try:
     cf = __import__(os.path.splitext(sys.argv[1])[0])
     parms = cf.parms
     config = cf.config
 except:
+    # print sys.exc_info()
     from config import parms, config
 
 class PivJob(PivJob):
@@ -25,9 +25,11 @@ class PivJob(PivJob):
         sc = self.parms.scale
 
         self.add_task('crop', x=p.xshift, y=p.yshift, width=p.width, height=p.height)
-        self.add_task('contrast', 'piv_contrast', 
-                c1=p.contrast_c1, c2=p.contrast_c2,
-                c3=p.contrast_c3, c4=p.contrast_c4)
+        if 1:
+            self.add_task('contrast', 'piv_contrast', 
+                    c1=p.contrast_c1, c2=p.contrast_c2, gamma=p.contrast_gamma)
+        else:
+            self.add_task('contrast')
         self.add_task('rescale', factor=1.0/sc)
         self.add_task('input_fft', 'fft', dimensions=2)
         self.add_copy_task('bc_image') 
@@ -47,11 +49,12 @@ class PivJob(PivJob):
                 masksize=p.likelihoodmask, maskinnersize=p.likelihoodmaskinner)
         self.add_task('cand', 'candidate-filter', 
                 threshold=p.candi_threshold, ring_start=p.ring_start, 
-                ring_step=p.ring_step, ring_end=p.ring_end )
-        self.add_task('azimu', 'azimuthal-test')
+                ring_step=p.ring_step, ring_end=p.ring_end, scale=p.scale )
+        self.add_task('azimu', 'azimuthal-test', thread=p.threads,
+                azimu_thld = p.azimu_thld, likelihood_thld = p.azimu_thld_likelihood)
 
     def setup_graph(self, flag):
-        b1 = self.branch('read', 'crop', 'rescale', 'bc_image', 'contrast', 'input_fft')
+        b1 = self.branch('read', 'crop', 'contrast', 'bc_image', 'rescale', 'input_fft')
         b2 = self.branch('ring_pattern', 'ring_stack', 'ring_fft', 'ring_loop')
         b3 = self.branch('bc_image')
         b4 = self.branch('ring_convolution', 'ifft', 'likelihood', 'cand')
@@ -62,4 +65,5 @@ class PivJob(PivJob):
 j = PivJob(parms)
 j.profiling = config.get('profiling') or False
 j.deviceCPU = config.get('deviceCPU') or False
-j.run(config.get('graph'))
+j.schedfixed = config.get('schedfixed') or True
+j.run()

@@ -38,7 +38,7 @@ class PivJob(UfoJob):
     def setup_basic_tasks(self):
         p  = self.parms
 
-        self.add_task('read', path=p.in_path, number=p.number, start=p.start)
+        self.add_task('read', path=p.in_path, number=p.number, start=int(p.start))
         if p.out_file.endswith(('.txt')):
             self.add_task('ring_writer', filename=p.out_file)
         else:
