@@ -223,7 +223,7 @@ ufo_candidate_filter_task_process (UfoTask *task,
     cand_list = filter_sort_candidate (cand_list);
 
     int num_cand = g_list_length(cand_list);
-    g_message ("number of candidate %d", num_cand);
+    // g_message ("number of candidate %d", num_cand);
 
     req.n_dims = 1;
     req.dims[0] = 2 + num_cand * sizeof(UfoRingCoordinate) / sizeof (float);
