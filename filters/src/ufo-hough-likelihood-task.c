@@ -116,7 +116,9 @@ ufo_hough_likelihood_task_get_requisition (UfoTask *task,
                                  UfoBuffer **inputs,
                                  UfoRequisition *requisition)
 {
-    ufo_buffer_get_requisition (inputs[0], requisition);
+    int max_cand = 2048;
+    requisition->n_dims = 1;
+    requisition->dims[0] = 2 + 5 * max_cand;
 }
 
 static guint
@@ -148,13 +150,16 @@ ufo_hough_likelihood_task_process (UfoTask *task,
     UfoGpuNode *node;
     UfoProfiler *profiler;
     cl_command_queue cmd_queue;
+    cl_int err;
 
     priv = UFO_HOUGH_LIKELIHOOD_TASK_GET_PRIVATE (task);
     node = UFO_GPU_NODE (ufo_task_node_get_proc_node (UFO_TASK_NODE (task)));
     profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
     cmd_queue = ufo_gpu_node_get_cmd_queue (node);
 
-    gsize g_work_size[] = { requisition->dims[0], requisition->dims[1] , requisition->dims[2]};
+    UfoRequisition req;
+    ufo_buffer_get_requisition(inputs[0], &req);
+    gsize g_work_size[] = { req.dims[0], req.dims[1] , req.dims[2]};
     gsize l_work_size[] = { 32, 16, 1};
 
     gsize shift = 6;
@@ -163,15 +168,34 @@ ufo_hough_likelihood_task_process (UfoTask *task,
     cl_mem in_img = ufo_buffer_get_device_image (inputs[0], cmd_queue);
     cl_mem out_mem = ufo_buffer_get_device_array (output, cmd_queue);
 
+    int count = 0;
+    cl_mem count_mem = clCreateBuffer(priv->context, CL_MEM_READ_WRITE, sizeof(int), NULL, &err);
+    err = clEnqueueWriteBuffer(cmd_queue, count_mem, CL_TRUE, 0, sizeof(int), &count, 0, NULL, NULL);
+    UFO_RESOURCES_CHECK_CLERR (err);
+
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 0, sizeof(cl_mem), &in_img));
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 1, sizeof(cl_mem), &out_mem));
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 2, sizeof(cl_mem), &priv->mask_mem));
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 3, sizeof(int), &priv->masksize_h));
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 4, sizeof(int), &priv->mask_num_ones));
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 5, l_mem_size, NULL));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 6, sizeof(cl_mem), &count_mem));
 
     ufo_profiler_call (profiler, cmd_queue, priv->kernel, 3, g_work_size, l_work_size);
 
+    err = clEnqueueReadBuffer (cmd_queue, count_mem, CL_TRUE, 0, sizeof(int), &count, 0, NULL, NULL);
+    UFO_RESOURCES_CHECK_CLERR (err);
+
+    float *out_cpu = ufo_buffer_get_host_array(output, NULL);
+    out_cpu[0] = count;
+    // why this does not work?
+    /*err = clEnqueueWriteBuffer (cmd_queue, out_mem, CL_FALSE, 0, sizeof(count), &count, 0, NULL, NULL);*/
+    /*UFO_RESOURCES_CHECK_CLERR (err);*/
+
+    err = clReleaseMemObject (count_mem);
+    UFO_RESOURCES_CHECK_CLERR (err);
+
+    /*g_message("HoughLikelihood: %d %f", count, out_cpu[2]);*/
     return TRUE;
 }
 

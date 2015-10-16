@@ -1,11 +1,13 @@
 const sampler_t smp = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_NEAREST;
+#pragma OPENCL EXTENSION cl_khr_global_int32_base_atomics : enable
 
 kernel void likelihood (read_only image3d_t input, 
-                        global float *output, //global float *candidate,
+                        global float *output,
                         constant int *mask,
                         private int maskSizeH, 
                         private int maskNumOnes,
-                        local float *local_mem)
+                        local float *local_mem,
+                        global int *count)
 {
     int shift = 6;
 
@@ -20,7 +22,7 @@ kernel void likelihood (read_only image3d_t input,
     unsigned glb_y = get_global_id(1);
     unsigned glb_z = get_global_id(2);
     const int4 glb_pos = (int4) (glb_x, glb_y, glb_z, 0);
-    
+
     unsigned loc_x = get_local_id(0);
     unsigned loc_y = get_local_id(1);
     unsigned local_tmp_id;
@@ -101,11 +103,26 @@ kernel void likelihood (read_only image3d_t input,
 #endif
 
     float res = exp((peak - mean)/std);
-    unsigned idx = glb_x 
-                   + glb_y * get_global_size(0) 
-                   + glb_z * get_global_size(0) * get_global_size(1);
+/*
+ *    unsigned idx = glb_x 
+ *                   + glb_y * get_global_size(0) 
+ *                   + glb_z * get_global_size(0) * get_global_size(1);
+ *
+ *    output[idx] = res;
+ */
+    if (res > 100.0f) {
+        int old = atomic_inc(count);
+        output[5*old + 2] = (float)glb_x; //save x coordinate
+        output[5*old + 3] = (float)glb_y; //save y coordinate
+        output[5*old + 4] = (float)glb_z;
+        output[5*old + 5] = res;
+        output[5*old + 6] = (float)1;
+    }
+}
 
-    output[idx] = res;
+kernel void zero(global float *mem) {
+    unsigned glb_x = get_global_id(0);
+    mem[glb_x] = -100.0f;
 }
 
 kernel void likelihood_old (read_only image3d_t input, 
