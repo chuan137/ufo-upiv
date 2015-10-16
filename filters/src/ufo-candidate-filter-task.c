@@ -190,9 +190,7 @@ ufo_candidate_filter_task_process (UfoTask *task,
     rings = (UfoRingCoordinate*) &cand_cpu[2]; 
     num_cand = cand_cpu[0];
 
-    for(int i = 0; i < num_cand+1; i++) {
-        if (i == num_cand)
-            g_message("num_cand = %f %f", rings[i].x, rings[i].y);
+    for(int i = 0; i < num_cand; i++) {
         rings[i].r = (priv->ring_start + priv->ring_step * rings[i].r) / priv->scale;
         cand_list = g_list_append(cand_list, (gpointer) &rings[i]);
     }
@@ -213,7 +211,7 @@ ufo_candidate_filter_task_process (UfoTask *task,
     for (int i = 0; i < num_cand; i++) 
         rings[i] = * (UfoRingCoordinate *) g_list_nth_data (cand_list, i);
 
-    g_message ("number of candidate %d", num_cand);
+    /*g_message ("number of filtered candidate %d", num_cand);*/
     return TRUE;
 }
 

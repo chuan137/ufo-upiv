@@ -35,6 +35,7 @@ struct _UfoHoughLikelihoodTaskPrivate {
     cl_context context;
     cl_kernel kernel;
     cl_mem mask_mem;
+    cl_mem count_mem;
 };
 
 static void ufo_task_interface_init (UfoTaskIface *iface);
@@ -105,9 +106,13 @@ ufo_hough_likelihood_task_setup (UfoTask *task,
 
     if (priv->mask_mem)
         UFO_RESOURCES_CHECK_CLERR (clReleaseMemObject (priv->mask_mem));
-    
     priv->mask_mem = clCreateBuffer (priv->context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,
             priv->masksize * priv->masksize * sizeof (*mask), mask, &err);
+    UFO_RESOURCES_CHECK_CLERR (err);
+
+    if (priv->count_mem)
+        UFO_RESOURCES_CHECK_CLERR (clReleaseMemObject (priv->mask_mem));
+    priv->count_mem = clCreateBuffer(priv->context, CL_MEM_READ_WRITE, sizeof(int), NULL, &err);
     UFO_RESOURCES_CHECK_CLERR (err);
 }
 
@@ -169,8 +174,7 @@ ufo_hough_likelihood_task_process (UfoTask *task,
     cl_mem out_mem = ufo_buffer_get_device_array (output, cmd_queue);
 
     int count = 0;
-    cl_mem count_mem = clCreateBuffer(priv->context, CL_MEM_READ_WRITE, sizeof(int), NULL, &err);
-    err = clEnqueueWriteBuffer(cmd_queue, count_mem, CL_TRUE, 0, sizeof(int), &count, 0, NULL, NULL);
+    err = clEnqueueWriteBuffer(cmd_queue, priv->count_mem, CL_TRUE, 0, sizeof(int), &count, 0, NULL, NULL);
     UFO_RESOURCES_CHECK_CLERR (err);
 
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 0, sizeof(cl_mem), &in_img));
@@ -179,11 +183,11 @@ ufo_hough_likelihood_task_process (UfoTask *task,
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 3, sizeof(int), &priv->masksize_h));
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 4, sizeof(int), &priv->mask_num_ones));
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 5, l_mem_size, NULL));
-    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 6, sizeof(cl_mem), &count_mem));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 6, sizeof(cl_mem), &priv->count_mem));
 
     ufo_profiler_call (profiler, cmd_queue, priv->kernel, 3, g_work_size, l_work_size);
 
-    err = clEnqueueReadBuffer (cmd_queue, count_mem, CL_TRUE, 0, sizeof(int), &count, 0, NULL, NULL);
+    err = clEnqueueReadBuffer (cmd_queue, priv->count_mem, CL_TRUE, 0, sizeof(int), &count, 0, NULL, NULL);
     UFO_RESOURCES_CHECK_CLERR (err);
 
     float *out_cpu = ufo_buffer_get_host_array(output, NULL);
@@ -191,9 +195,6 @@ ufo_hough_likelihood_task_process (UfoTask *task,
     // why this does not work?
     /*err = clEnqueueWriteBuffer (cmd_queue, out_mem, CL_FALSE, 0, sizeof(count), &count, 0, NULL, NULL);*/
     /*UFO_RESOURCES_CHECK_CLERR (err);*/
-
-    err = clReleaseMemObject (count_mem);
-    UFO_RESOURCES_CHECK_CLERR (err);
 
     /*g_message("HoughLikelihood: %d %f", count, out_cpu[2]);*/
     return TRUE;
@@ -250,6 +251,29 @@ ufo_hough_likelihood_task_get_property (GObject *object,
 static void
 ufo_hough_likelihood_task_finalize (GObject *object)
 {
+    UfoHoughLikelihoodTaskPrivate *priv;
+    priv = UFO_HOUGH_LIKELIHOOD_TASK_GET_PRIVATE (object);
+
+    if (priv->kernel) {
+        UFO_RESOURCES_CHECK_CLERR (clReleaseKernel (priv->kernel));
+        priv->kernel = NULL;
+    }
+
+    if (priv->context) {
+        UFO_RESOURCES_CHECK_CLERR (clReleaseContext (priv->context));
+        priv->context = NULL;
+    }
+
+    if (priv->mask_mem) {
+        UFO_RESOURCES_CHECK_CLERR (clReleaseMemObject (priv->mask_mem));
+        priv->mask_mem = NULL;
+    }
+
+    if (priv->count_mem) {
+        UFO_RESOURCES_CHECK_CLERR (clReleaseMemObject (priv->count_mem));
+        priv->count_mem = NULL;
+    }
+
     G_OBJECT_CLASS (ufo_hough_likelihood_task_parent_class)->finalize (object);
 }
 
