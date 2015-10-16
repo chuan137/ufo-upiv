@@ -198,7 +198,7 @@ ufo_hough_likelihood_task_process (UfoTask *task,
     /*err = clEnqueueWriteBuffer (cmd_queue, out_mem, CL_FALSE, 0, sizeof(count), &count, 0, NULL, NULL);*/
     /*UFO_RESOURCES_CHECK_CLERR (err);*/
 
-    /*g_message("HoughLikelihood: %d %f", count, out_cpu[2]);*/
+    g_message("HoughLikelihood: %d %f", count, out_cpu[2]);
     return TRUE;
 }
 
