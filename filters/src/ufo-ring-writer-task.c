@@ -98,6 +98,7 @@ ufo_ring_writer_task_process (UfoTask *task,
     unsigned num = in_mem[0]; 
     unsigned scale = in_mem[1];
 
+    g_message("RingWriter: detected ring number %4u", num);
     fprintf(priv->fp, "# RingWriter: number of rings %u\n", num);
     for (unsigned  i = 0; i < num; i++) {
         fprintf(priv->fp, 
