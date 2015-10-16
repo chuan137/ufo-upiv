@@ -35,7 +35,6 @@ struct _UfoCandidateFilterTaskPrivate {
     guint ring_end;
     guint ring_current;
     guint scale;
-    gfloat threshold;
 };
 
 static void ufo_task_interface_init (UfoTaskIface *iface);
@@ -52,7 +51,6 @@ enum {
     PROP_RING_STEP,
     PROP_RING_END,
     PROP_SCALE,
-    PROP_THRESHOLD,
     N_PROPERTIES
 };
 
@@ -177,68 +175,41 @@ ufo_candidate_filter_task_process (UfoTask *task,
                          UfoRequisition *requisition)
 {
     UfoCandidateFilterTaskPrivate *priv;
-    UfoGpuNode  *node;   
-    UfoProfiler *profiler;
-    cl_command_queue cmd_queue;
     UfoRingCoordinate *rings;
-    int max_cand = 2048;
+    UfoRequisition req;
+    int num_cand;
+    gfloat *cand_cpu, *out_cpu;
+    GList *cand_list = NULL;
 
     priv = UFO_CANDIDATE_FILTER_TASK_GET_PRIVATE (task);
-    node = UFO_GPU_NODE (ufo_task_node_get_proc_node (UFO_TASK_NODE (task)));
-    cmd_queue = ufo_gpu_node_get_cmd_queue (node);
-    profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
 
-    UfoRequisition req = {.n_dims = 1, .dims[0] = 5 + 5*max_cand};
-    gfloat *cand_cpu = g_malloc0 (req.dims[0] * sizeof(float));
-    UfoBuffer *cand_buf = ufo_buffer_new_with_data(&req, cand_cpu, priv->context);
+    cand_cpu = ufo_buffer_get_host_array (inputs[0], NULL);
 
-    cl_mem in_mem = ufo_buffer_get_device_array(inputs[0], cmd_queue);
-    cl_mem cand_mem = ufo_buffer_get_device_array(cand_buf, cmd_queue);
+    rings = (UfoRingCoordinate*) &cand_cpu[2]; 
+    num_cand = cand_cpu[0];
 
-    ufo_buffer_get_requisition (inputs[0], &req);
-    gsize g_work_size[] = { req.dims[0], req.dims[1] };
-
-    UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->kernel,0,sizeof(cl_mem),&in_mem));
-    UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->kernel,1,sizeof(cl_mem),&cand_mem));
-    UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->kernel,2,sizeof(gfloat),&(priv->threshold)));
-
-    for (guint n = 0; n < req.dims[2]; n++)
-    {
-        UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->kernel,3,sizeof(guint), &n));
-        ufo_profiler_call(profiler,cmd_queue,priv->kernel,2,g_work_size,NULL);
-    }
-
-    cand_cpu = ufo_buffer_get_host_array (cand_buf, NULL);
-
-    GList *cand_list = NULL;
-    rings = (UfoRingCoordinate*) cand_cpu; 
-    for(int i = 0; i < max_cand; i++) {
-        if (fabs(rings[i].intensity - 1.0f) < 0.000001f) {
-            rings[i].r = (priv->ring_start + priv->ring_step * rings[i].r) / priv->scale;
-            cand_list = g_list_append(cand_list, (gpointer) &rings[i]);
-        }
+    for(int i = 0; i < num_cand; i++) {
+        rings[i].r = (priv->ring_start + priv->ring_step * rings[i].r) / priv->scale;
+        cand_list = g_list_append(cand_list, (gpointer) &rings[i]);
     }
 
     // filter candidate neighbours
     cand_list = filter_sort_candidate (cand_list);
-
-    int num_cand = g_list_length(cand_list);
-    // g_message ("number of candidate %d", num_cand);
+    num_cand = g_list_length (cand_list);
 
     req.n_dims = 1;
     req.dims[0] = 2 + num_cand * sizeof(UfoRingCoordinate) / sizeof (float);
     ufo_buffer_resize(output, &req);
 
-    float* res = ufo_buffer_get_host_array(output,NULL);
-    res[0] = num_cand;
-    res[1] = priv->scale;
+    out_cpu = ufo_buffer_get_host_array(output,NULL);
+    out_cpu[0] = num_cand;
+    out_cpu[1] = priv->scale;
 
-    rings = (UfoRingCoordinate*) &res[2];
+    rings = (UfoRingCoordinate*) &out_cpu[2];
     for (int i = 0; i < num_cand; i++) 
         rings[i] = * (UfoRingCoordinate *) g_list_nth_data (cand_list, i);
 
-    g_object_unref (cand_buf);
-
+    /*g_message ("number of filtered candidate %d", num_cand);*/
     return TRUE;
 }
 
@@ -263,9 +234,6 @@ ufo_candidate_filter_task_set_property (GObject *object,
             break;
         case PROP_SCALE:
             priv->scale = g_value_get_uint(value);
-            break;
-        case PROP_THRESHOLD:
-            priv->threshold = g_value_get_float(value);
             break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -293,9 +261,6 @@ ufo_candidate_filter_task_get_property (GObject *object,
             break;
         case PROP_SCALE:
             g_value_set_uint (value, priv->scale);
-            break;
-        case PROP_THRESHOLD:
-            g_value_set_float(value, priv->threshold);
             break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -358,12 +323,6 @@ ufo_candidate_filter_task_class_init (UfoCandidateFilterTaskClass *klass)
                1, 2, 1,
                G_PARAM_READWRITE);
 
-    properties[PROP_THRESHOLD] = 
-        g_param_spec_float ("threshold",
-               "", "",
-               G_MINFLOAT, G_MAXFLOAT, 300.0f,
-               G_PARAM_READWRITE);
-
     for (guint i = PROP_0 + 1; i < N_PROPERTIES; i++)
         g_object_class_install_property (oclass, i, properties[i]);
 
@@ -378,6 +337,5 @@ ufo_candidate_filter_task_init(UfoCandidateFilterTask *self)
     self->priv->ring_end = 5;
     self->priv->ring_step = 2;
     self->priv->scale = 1;
-    self->priv->threshold = 300.0;
     self->priv->ring_current = self->priv->ring_start;
 }

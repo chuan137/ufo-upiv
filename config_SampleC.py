@@ -15,12 +15,11 @@ parms = dict(
     ring_method = 0,
     likelihoodmask = 13,
     likelihoodmaskinner = 6,
+    likelihoodthreshold = 100,
     contrast_c1 = -0.5,
     contrast_c2 = 10,
     contrast_c3 = 4,
     contrast_c4 = 4,
-    candi_threshold = 100,
-    azimu_peak = 1.001
     )
 
 config = dict (
