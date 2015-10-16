@@ -430,9 +430,10 @@ ufo_azimuthal_test_task_process (UfoTask *task,
 
     int num = 0;
     for(unsigned i=0; i < num_cand;i++) {
-        //if (cand[i].intensity <= 0.0f) continue;
-        if (cand[i].intensity  > priv->thld_azimu
-                || cand[i].contrast > priv->thld_likelihood) {
+        if (cand[i].intensity < priv->thld_azimu) continue;
+        if (cand[i].contrast < priv->thld_likelihood) continue;
+        if (cand[i].intensity  > 2.0 * priv->thld_azimu
+                || cand[i].contrast > 2.0 * priv->thld_likelihood) {
             rings[num] = cand[i];
             num++;
         }
