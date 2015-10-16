@@ -35,7 +35,6 @@ struct _UfoCandidateFilterTaskPrivate {
     guint ring_end;
     guint ring_current;
     guint scale;
-    gfloat threshold;
 };
 
 static void ufo_task_interface_init (UfoTaskIface *iface);
@@ -52,7 +51,6 @@ enum {
     PROP_RING_STEP,
     PROP_RING_END,
     PROP_SCALE,
-    PROP_THRESHOLD,
     N_PROPERTIES
 };
 
@@ -237,9 +235,6 @@ ufo_candidate_filter_task_set_property (GObject *object,
         case PROP_SCALE:
             priv->scale = g_value_get_uint(value);
             break;
-        case PROP_THRESHOLD:
-            priv->threshold = g_value_get_float(value);
-            break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
             break;
@@ -266,9 +261,6 @@ ufo_candidate_filter_task_get_property (GObject *object,
             break;
         case PROP_SCALE:
             g_value_set_uint (value, priv->scale);
-            break;
-        case PROP_THRESHOLD:
-            g_value_set_float(value, priv->threshold);
             break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -331,12 +323,6 @@ ufo_candidate_filter_task_class_init (UfoCandidateFilterTaskClass *klass)
                1, 2, 1,
                G_PARAM_READWRITE);
 
-    properties[PROP_THRESHOLD] = 
-        g_param_spec_float ("threshold",
-               "", "",
-               G_MINFLOAT, G_MAXFLOAT, 300.0f,
-               G_PARAM_READWRITE);
-
     for (guint i = PROP_0 + 1; i < N_PROPERTIES; i++)
         g_object_class_install_property (oclass, i, properties[i]);
 
@@ -351,6 +337,5 @@ ufo_candidate_filter_task_init(UfoCandidateFilterTask *self)
     self->priv->ring_end = 5;
     self->priv->ring_step = 2;
     self->priv->scale = 1;
-    self->priv->threshold = 300.0;
     self->priv->ring_current = self->priv->ring_start;
 }

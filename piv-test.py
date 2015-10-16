@@ -50,10 +50,11 @@ class PivJob(PivJob):
         self.add_task('likelihood', 'hough-likelihood', 
                 masksize=p.likelihoodmask, maskinnersize=p.likelihoodmaskinner)
         self.add_task('likelihood-image', 'hough-likelihood-image', 
-                masksize=p.likelihoodmask, maskinnersize=p.likelihoodmaskinner)
+                masksize=p.likelihoodmask, maskinnersize=p.likelihoodmaskinner,
+                threshold=p.likelihoodthreshold)
         self.add_task('cand', 'candidate-filter', 
-                threshold=p.candi_threshold, ring_start=p.ring_start, 
-                ring_step=p.ring_step, ring_end=p.ring_end, scale=p.scale )
+                ring_start=p.ring_start, ring_step=p.ring_step,
+                ring_end=p.ring_end, scale=p.scale )
         self.add_task('azimu', 'azimuthal-test', thread=p.threads,
                 azimu_thld = p.azimu_thld, likelihood_thld = p.azimu_thld_likelihood)
 

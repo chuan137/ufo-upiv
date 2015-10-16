@@ -7,7 +7,8 @@ kernel void likelihood (read_only image3d_t input,
                         private int maskSizeH, 
                         private int maskNumOnes,
                         local float *local_mem,
-                        global int *count)
+                        global int *count,
+                        private float threshold)
 {
     int shift = 6;
 
@@ -110,7 +111,7 @@ kernel void likelihood (read_only image3d_t input,
  *
  *    output[idx] = res;
  */
-    if (res > 100.0f) {
+    if (res > threshold) {
         int old = atomic_inc(count);
         output[5*old + 2] = (float)glb_x; //save x coordinate
         output[5*old + 3] = (float)glb_y; //save y coordinate

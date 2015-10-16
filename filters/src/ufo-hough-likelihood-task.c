@@ -31,7 +31,7 @@ struct _UfoHoughLikelihoodTaskPrivate {
     gint masksize;
     gint masksize_h;
     gfloat maskinnersize;
-
+    gfloat threshold;
     cl_context context;
     cl_kernel kernel;
     cl_mem mask_mem;
@@ -50,6 +50,7 @@ enum {
     PROP_0,
     PROP_MASKSIZE,
     PROP_MASKINNERSIZE,
+    PROP_THRESHOLD,
     N_PROPERTIES
 };
 
@@ -184,6 +185,7 @@ ufo_hough_likelihood_task_process (UfoTask *task,
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 4, sizeof(int), &priv->mask_num_ones));
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 5, l_mem_size, NULL));
     UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 6, sizeof(cl_mem), &priv->count_mem));
+    UFO_RESOURCES_CHECK_CLERR (clSetKernelArg (priv->kernel, 7, sizeof(gfloat), &priv->threshold));
 
     ufo_profiler_call (profiler, cmd_queue, priv->kernel, 3, g_work_size, l_work_size);
 
@@ -216,10 +218,12 @@ ufo_hough_likelihood_task_set_property (GObject *object,
                 g_warning ("masksize (%d) must be odd number", priv->masksize);
                 priv->masksize -= 1;
             }
-
             break;
         case PROP_MASKINNERSIZE:
             priv->maskinnersize = g_value_get_float (value);
+            break;
+        case PROP_THRESHOLD:
+            priv->threshold = g_value_get_float(value);
             break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -241,6 +245,9 @@ ufo_hough_likelihood_task_get_property (GObject *object,
             break;
         case PROP_MASKINNERSIZE:
             g_value_set_float (value, priv->maskinnersize);
+            break;
+        case PROP_THRESHOLD:
+            g_value_set_float(value, priv->threshold);
             break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -311,6 +318,12 @@ ufo_hough_likelihood_task_class_init (UfoHoughLikelihoodTaskClass *klass)
             1.f, 10.f, 1.f,
             G_PARAM_READWRITE);
 
+    properties[PROP_THRESHOLD] = 
+        g_param_spec_float ("threshold",
+               "", "",
+               G_MINFLOAT, G_MAXFLOAT, 300.0f,
+               G_PARAM_READWRITE);
+
     for (guint i = PROP_0 + 1; i < N_PROPERTIES; i++)
         g_object_class_install_property (oclass, i, properties[i]);
 
@@ -323,4 +336,5 @@ ufo_hough_likelihood_task_init(UfoHoughLikelihoodTask *self)
     self->priv = UFO_HOUGH_LIKELIHOOD_TASK_GET_PRIVATE(self);
     self->priv->masksize = 9;
     self->priv->maskinnersize = 2.0;
+    self->priv->threshold = 300.0;
 }
