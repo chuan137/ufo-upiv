@@ -27,8 +27,8 @@
 #include "ufo-azimuthal-test-task.h"
 #include "ufo-ring-coordinates.h"
 
-#define SHOWMESSAGE
 #undef SHOWMESSAGE
+#define SHOWMESSAGE
 
 #define MAX_THREAD_NUM 100
 #define MAX_HIST_LEN 32
@@ -430,10 +430,13 @@ ufo_azimuthal_test_task_process (UfoTask *task,
 
     int num = 0;
     for(unsigned i=0; i < num_cand;i++) {
-        if (cand[i].intensity < priv->thld_azimu) continue;
-        if (cand[i].contrast < priv->thld_likelihood) continue;
-        if (cand[i].intensity  > 2.0 * priv->thld_azimu
-                || cand[i].contrast > 2.0 * priv->thld_likelihood) {
+        if ((cand[i].contrast > priv->thld_likelihood
+                && cand[i].intensity  > priv->thld_azimu)
+            || (cand[i].contrast < priv->thld_likelihood
+                && cand[i].intensity  > 2.0 * priv->thld_azimu)
+            || (cand[i].intensity < priv->thld_azimu 
+                && cand[i].contrast > 2.0 * priv->thld_likelihood)) {
+
             rings[num] = cand[i];
             num++;
         }
