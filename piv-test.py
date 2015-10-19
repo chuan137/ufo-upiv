@@ -6,18 +6,26 @@ import sys
 import os
 from python.pivjob import PivJob
 import logging
+import argparse
 
 logfile = '.hough.log'
 logging.basicConfig(level=logging.DEBUG, filename=logfile, filemode='w', 
                     format='%(name)s %(levelname)s %(message)s')
 
-try:
-    cf = __import__(os.path.splitext(sys.argv[1])[0])
-    parms = cf.parms
-    config = cf.config
-except:
-    print sys.exc_info()
-    from config import parms, config
+parser = argparse.ArgumentParser()
+parser.add_argument('configuration', nargs='?', default='config')
+parser.add_argument('-g', '--graph')
+parser.add_argument('-p', '--profiling', action='store_true', default=False)
+args = parser.parse_args(sys.argv[1:])
+
+cf = __import__(os.path.splitext(args.configuration)[0])
+parms = cf.parms
+config = cf.config
+
+if args.graph:
+    config['graph'] = args.graph
+if args.profiling:
+    config['profiling'] = args.profiling
 
 class PivJob(PivJob):
     def setup_tasks(self):
@@ -28,10 +36,9 @@ class PivJob(PivJob):
         self.add_task('crop', x=p.xshift, y=p.yshift, width=p.width, height=p.height)
         if 1:
             self.add_task('contrast', 'piv_contrast', 
-                    c1=p.contrast_c1, c2=p.contrast_c2,
-                    gamma=p.contrast_gamma)
+                    c1=p.contrast_c1, c2=p.contrast_c2, gamma=p.contrast_gamma)
         else:
-            self.add_task('contrast')
+            self.add_task('contrast', remove_high=p.remove_high)
         self.add_task('rescale', factor=1.0/sc)
         self.add_task('input_fft', 'fft', dimensions=2)
         self.add_copy_task('bc_image') 
@@ -48,15 +55,15 @@ class PivJob(PivJob):
 
         self.add_task('ifft', dimensions=2)
         self.add_task('likelihood', 'hough-likelihood', 
-                masksize=p.likelihoodmask, maskinnersize=p.likelihoodmaskinner)
-        self.add_task('likelihood-image', 'hough-likelihood-image', 
                 masksize=p.likelihoodmask, maskinnersize=p.likelihoodmaskinner,
-                threshold=p.likelihoodthreshold)
+                threshold=p.thld_likely)
+        self.add_task('likelihood-image', 'hough-likelihood-image', 
+                masksize=p.likelihoodmask, maskinnersize=p.likelihoodmaskinner)
         self.add_task('cand', 'candidate-filter', 
                 ring_start=p.ring_start, ring_step=p.ring_step,
                 ring_end=p.ring_end, scale=p.scale )
         self.add_task('azimu', 'azimuthal-test', thread=p.threads,
-                azimu_thld = p.azimu_thld, likelihood_thld = p.azimu_thld_likelihood)
+                azimu_thld = p.thld_azimu, likelihood_thld = p.thld_likely)
 
     def setup_graph(self, flag):
         if flag==0 or flag=='azimu':
