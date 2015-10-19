@@ -27,8 +27,8 @@
 #include "ufo-azimuthal-test-task.h"
 #include "ufo-ring-coordinates.h"
 
-#undef SHOWMESSAGE
 #define SHOWMESSAGE
+#undef SHOWMESSAGE
 
 #define MAX_THREAD_NUM 100
 #define MAX_HIST_LEN 32
