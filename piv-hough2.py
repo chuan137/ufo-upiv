@@ -4,25 +4,46 @@
 # default config file is config.py
 import sys
 import os
-from python.pivjob import PivJob
 import logging
 import argparse
+import ConfigParser
+from python.pivjob import PivJob
 
+# configure logger
 logfile = '.hough.log'
 logging.basicConfig(level=logging.DEBUG, filename=logfile, filemode='w', 
                     format='%(name)s %(levelname)s %(message)s')
 
-parser = argparse.ArgumentParser()
-parser.add_argument('configuration', nargs='?', default='config')
-parser.add_argument('-p', '--profiling', action='store_true', default=False)
-args = parser.parse_args(sys.argv[1:])
+def main():
+    # parse command line arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument('configuration', nargs='?', default='config_hough.cfg')
+    parser.add_argument('-p', '--profiling', action='store_true', default=False)
+    args = parser.parse_args(sys.argv[1:])
 
-cf = __import__(os.path.splitext(args.configuration)[0])
-parms = cf.parms
-config = cf.config
+    # parse configuration file
+    cf_parser = ConfigParser.ConfigParser()
+    if cf_parser.read(args.configuration) != []:
+        print "Configuration: ", args.configuration
+        parms = {k: eval(v) for k,v in cf_parser.items('parms')}
+        config = {k: eval(v) for k,v in cf_parser.items('config')}
+    else:
+        print "Unable to open configuration file", args.configuration
+        sys.exit(-1)
 
-if args.profiling:
-    config['profiling'] = args.profiling
+    # prepend configuration file path to data path (parms.in_path)
+    parms['in_path'] = os.path.join(os.path.dirname(args.configuration), parms['in_path'])
+
+    # overwrite config/parms with command line arguments
+    if args.profiling:
+        config['profiling'] = args.profiling
+
+    # run pivjob
+    j = PivJob(parms)
+    j.profiling = config.get('profiling') or False
+    j.deviceCPU = config.get('deviceCPU') or False
+    j.schedfixed = config.get('schedfixed') or True
+    j.run()
 
 class PivJob(PivJob):
     def setup_tasks(self):
@@ -69,8 +90,5 @@ class PivJob(PivJob):
         self.graph.merge_branch(b1, b2, b4)
         self.graph.merge_branch(b3, b4, b5)
 
-j = PivJob(parms)
-j.profiling = config.get('profiling') or False
-j.deviceCPU = config.get('deviceCPU') or False
-j.schedfixed = config.get('schedfixed') or True
-j.run()
+if __name__ == '__main__':
+    main()
