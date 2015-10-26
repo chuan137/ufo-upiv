@@ -7,8 +7,8 @@ SAMPLES := SampleA SampleB SampleC
 SAMPLE_DIRS = $(addprefix $(OUTROOT)/, $(SAMPLES))
 
 OUTROOT := ./output
-DATAROOT := ./
-SCRIPT := ../piv-test2.py
+DATAROOT := ./input
+SCRIPT := ../piv-test.py
 CONFIG_TMP := tmp.cfg
 OUTPUT_TMP := /dev/null
 OUTPUT_TIF := $(OUTROOT)/output.tif
@@ -59,12 +59,12 @@ endef
 
 .SECONDEXPANSION:
 
-%.tif %.txt: config_$$(lastword $$(subst /, ,$$(@D))).py
+%.tif %.txt: $$(lastword $$(subst /, ,$$(@D))).cfg
 	@echo $@
 	$(eval graph=$(firstword $(subst _, ,$(*F))))
 	$(eval number=$(shell echo $(lastword $(subst _, ,$(*F))) | sed -r 's/^0*([0-9]+)/\1/' )) 
 	$(eval sample=$(lastword $(subst /, ,$(*D))))
-	@cp config$(sample).cfg $(CONFIG_TMP)
+	@cp $(sample).cfg $(CONFIG_TMP)
 	$(mk_config_file)
 	@python $(SCRIPT) $(CONFIG_TMP) 2> $(OUTPUT_TMP)
 	@rm $(CONFIG_TMP)
