@@ -1,2 +1,4 @@
 *
 !.gitignore
+!Makefile
+!config*.cfg

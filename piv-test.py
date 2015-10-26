@@ -4,9 +4,10 @@
 # default config file is config.py
 import sys
 import os
-from python.pivjob import PivJob
 import logging
 import argparse
+import ConfigParser
+from python.pivjob import PivJob
 
 logfile = '.hough.log'
 logging.basicConfig(level=logging.DEBUG, filename=logfile, filemode='w', 
