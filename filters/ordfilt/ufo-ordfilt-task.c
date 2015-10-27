@@ -239,6 +239,8 @@ compute_ordfilt (UfoOrdfiltTaskPrivate *priv, UfoBuffer *src, UfoBuffer *pattern
     unsigned iter_count = (unsigned) (1 + sizeof (float) * height * width * number_ones / (priv->max_alloc_size + 1));
     unsigned y_offset = 0;
 
+    g_message("%d %d", number_ones, radius);
+
     /* On first iteration process mod rows more, this is needed when the height
      * of image is not divisible by iter_count */
     unsigned mod = (unsigned) (image_requisition.dims[1] % iter_count);

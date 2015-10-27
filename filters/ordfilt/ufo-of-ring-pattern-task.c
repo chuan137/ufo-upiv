@@ -22,11 +22,11 @@
 #include <math.h>
 #include <stdlib.h>
 
-#include "ufo-ring-pattern-task.h"
+#include "ufo-of-ring-pattern-task.h"
 #include "ufo-priv.h"
 
 
-struct _UfoRingPatternTaskPrivate {
+struct _UfoOfRingPatternTaskPrivate {
     unsigned ring_thickness;
     unsigned ring_end;
     unsigned ring_start;
@@ -39,11 +39,11 @@ struct _UfoRingPatternTaskPrivate {
 
 static void ufo_task_interface_init (UfoTaskIface *iface);
 
-G_DEFINE_TYPE_WITH_CODE (UfoRingPatternTask, ufo_ring_pattern_task, UFO_TYPE_TASK_NODE,
+G_DEFINE_TYPE_WITH_CODE (UfoOfRingPatternTask, ufo_of_ring_pattern_task, UFO_TYPE_TASK_NODE,
                          G_IMPLEMENT_INTERFACE (UFO_TYPE_TASK,
                                                 ufo_task_interface_init))
 
-#define UFO_RING_PATTERN_TASK_GET_PRIVATE(obj) (G_TYPE_INSTANCE_GET_PRIVATE((obj), UFO_TYPE_RING_PATTERN_TASK, UfoRingPatternTaskPrivate))
+#define UFO_OF_RING_PATTERN_TASK_GET_PRIVATE(obj) (G_TYPE_INSTANCE_GET_PRIVATE((obj), UFO_TYPE_OF_RING_PATTERN_TASK, UfoOfRingPatternTaskPrivate))
 
 enum {
     PROP_0,
@@ -60,44 +60,44 @@ enum {
 static GParamSpec *properties[N_PROPERTIES] = { NULL, };
 
 UfoNode *
-ufo_ring_pattern_task_new (void)
+ufo_of_ring_pattern_task_new (void)
 {
-    return UFO_NODE (g_object_new (UFO_TYPE_RING_PATTERN_TASK, NULL));
+    return UFO_NODE (g_object_new (UFO_TYPE_OF_RING_PATTERN_TASK, NULL));
 }
 
 static void
-ufo_ring_pattern_task_setup (UfoTask *task,
+ufo_of_ring_pattern_task_setup (UfoTask *task,
                        UfoResources *resources,
                        GError **error)
 {
 }
 
 static void
-ufo_ring_pattern_task_get_requisition (UfoTask *task,
+ufo_of_ring_pattern_task_get_requisition (UfoTask *task,
                                  UfoBuffer **inputs,
                                  UfoRequisition *requisition)
 {
-    UfoRingPatternTaskPrivate *priv = UFO_RING_PATTERN_TASK_GET_PRIVATE (task);
+    UfoOfRingPatternTaskPrivate *priv = UFO_OF_RING_PATTERN_TASK_GET_PRIVATE (task);
     requisition->dims[0] = priv->width;
     requisition->dims[1] = priv->height;
     requisition->n_dims = 2;
 }
 
 static guint
-ufo_ring_pattern_task_get_num_inputs (UfoTask *task)
+ufo_of_ring_pattern_task_get_num_inputs (UfoTask *task)
 {
     return 0;
 }
 
 static guint
-ufo_ring_pattern_task_get_num_dimensions (UfoTask *task,
+ufo_of_ring_pattern_task_get_num_dimensions (UfoTask *task,
                                              guint input)
 {
     return 0;
 }
 
 static UfoTaskMode
-ufo_ring_pattern_task_get_mode (UfoTask *task)
+ufo_of_ring_pattern_task_get_mode (UfoTask *task)
 {
     return UFO_TASK_MODE_GENERATOR | UFO_TASK_MODE_CPU;
 }
@@ -116,11 +116,11 @@ static void add_ring_metadata(UfoBuffer *output, unsigned number_ones,
 }
 
 static gboolean
-ufo_ring_pattern_task_generate (UfoTask *task,
+ufo_of_ring_pattern_task_generate (UfoTask *task,
                                 UfoBuffer *output,
                                 UfoRequisition *requisition)
 {
-    UfoRingPatternTaskPrivate *priv = UFO_RING_PATTERN_TASK_GET_PRIVATE (task);
+    UfoOfRingPatternTaskPrivate *priv = UFO_OF_RING_PATTERN_TASK_GET_PRIVATE (task);
 
     if (priv->ring_current > priv->ring_end)
         return FALSE;
@@ -128,69 +128,24 @@ ufo_ring_pattern_task_generate (UfoTask *task,
     float *out = ufo_buffer_get_host_array (output, NULL);
     int dimx = (int) priv->width;
     int dimy = (int) priv->height;
+
     unsigned counter = 0;
-    // ring distribution params
-    float thick_h = (float) priv->ring_thickness / 2.0;
-    float sig = priv->ring_thickness/2.0;
-
-    for (int y = -(dimy / 2); y < dimy / 2; ++y) {
+    for (int y = -(dimy / 2); y < dimy / 2; ++y)
         for (int x = -(dimx / 2); x < dimx / 2; ++x) {
-            float dist = sqrt(x * x + y * y) - priv->ring_current;
-            int sign = dist < 0 ? -1 : 1;
-            dist = sign * dist;
-            switch (priv->method) {
-                case GAUSSIAN:
-                    if (dist <= thick_h) 
-                    {
-                        ++counter;
-                        out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] 
-                            = exp(-dist*dist/(2.0*sig*sig));
-                    } 
-                    else if (dist <= 2.0 * thick_h) {
-                        ++counter;
-                        out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx]
-                            = -1;
-                        /*out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] */
-                            /*= - exp(-dist*dist/(2.0*sig*sig));*/
-                    } else
-                        out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] = 0;
-                    break;
-                case STEP:
-                    if (dist <= thick_h) 
-                    {
-                        ++counter;
-                        out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] = 1;
-                    } else
-                        out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] = 0;
-                    break;
-                case SKEW:
-                    if (dist <= thick_h) 
-                    {
-                        ++counter;
-                        out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] = sign;
-                    } else
-                        out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] = 0;
-                    break;
-                case SKEW2:
-                    if (dist <= thick_h) {
-                        ++counter;
-                        out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] 
-                            = sign * exp(-dist*dist/(2.0*sig*sig));
-                    } else 
-                        out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] = 0;
-                    break;
-                default:
-                    break;
+            double dist = sqrt (x * x + y * y) - priv->ring_current;
+            dist = dist < 0 ? -dist : dist;
+            if (dist < (double) priv->ring_thickness / 2) {
+                out[(x + dimx/2) + (y + dimy/2) * dimx] = 1;
+                ++counter;
             }
+            else
+                out[(x + dimx/2) + (y + dimy/2) * dimx] = 0;
         }
-    }
-
     add_ring_metadata(output, counter, priv->ring_current);
-
+    float inv_counter = 1.0 / counter;
     for (int y = -(dimy / 2); y < dimy / 2; ++y) {
         for (int x = -(dimx / 2); x < dimx / 2; ++x) {
-            out[(x + (dimx)) % dimx + ((y + (dimy)) % dimy) * dimx] 
-                /= (float)counter;
+            out[(x + dimx/2) + (y + dimy/2) * dimx] *= inv_counter;
         }
     }
 
@@ -199,12 +154,12 @@ ufo_ring_pattern_task_generate (UfoTask *task,
 }
 
 static void
-ufo_ring_pattern_task_set_property (GObject *object,
+ufo_of_ring_pattern_task_set_property (GObject *object,
                               guint property_id,
                               const GValue *value,
                               GParamSpec *pspec)
 {
-    UfoRingPatternTaskPrivate *priv = UFO_RING_PATTERN_TASK_GET_PRIVATE (object);
+    UfoOfRingPatternTaskPrivate *priv = UFO_OF_RING_PATTERN_TASK_GET_PRIVATE (object);
 
     switch (property_id) {
         case PROP_RING_START:
@@ -236,12 +191,12 @@ ufo_ring_pattern_task_set_property (GObject *object,
 }
 
 static void
-ufo_ring_pattern_task_get_property (GObject *object,
+ufo_of_ring_pattern_task_get_property (GObject *object,
                               guint property_id,
                               GValue *value,
                               GParamSpec *pspec)
 {
-    UfoRingPatternTaskPrivate *priv = UFO_RING_PATTERN_TASK_GET_PRIVATE (object);
+    UfoOfRingPatternTaskPrivate *priv = UFO_OF_RING_PATTERN_TASK_GET_PRIVATE (object);
 
     switch (property_id) {
         case PROP_RING_START:
@@ -272,30 +227,30 @@ ufo_ring_pattern_task_get_property (GObject *object,
 }
 
 static void
-ufo_ring_pattern_task_finalize (GObject *object)
+ufo_of_ring_pattern_task_finalize (GObject *object)
 {
-    G_OBJECT_CLASS (ufo_ring_pattern_task_parent_class)->finalize (object);
+    G_OBJECT_CLASS (ufo_of_ring_pattern_task_parent_class)->finalize (object);
 }
 
 static void
 ufo_task_interface_init (UfoTaskIface *iface)
 {
-    iface->setup = ufo_ring_pattern_task_setup;
-    iface->get_num_inputs = ufo_ring_pattern_task_get_num_inputs;
-    iface->get_num_dimensions = ufo_ring_pattern_task_get_num_dimensions;
-    iface->get_mode = ufo_ring_pattern_task_get_mode;
-    iface->get_requisition = ufo_ring_pattern_task_get_requisition;
-    iface->generate = ufo_ring_pattern_task_generate;
+    iface->setup = ufo_of_ring_pattern_task_setup;
+    iface->get_num_inputs = ufo_of_ring_pattern_task_get_num_inputs;
+    iface->get_num_dimensions = ufo_of_ring_pattern_task_get_num_dimensions;
+    iface->get_mode = ufo_of_ring_pattern_task_get_mode;
+    iface->get_requisition = ufo_of_ring_pattern_task_get_requisition;
+    iface->generate = ufo_of_ring_pattern_task_generate;
 }
 
 static void
-ufo_ring_pattern_task_class_init (UfoRingPatternTaskClass *klass)
+ufo_of_ring_pattern_task_class_init (UfoOfRingPatternTaskClass *klass)
 {
     GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
 
-    gobject_class->set_property = ufo_ring_pattern_task_set_property;
-    gobject_class->get_property = ufo_ring_pattern_task_get_property;
-    gobject_class->finalize = ufo_ring_pattern_task_finalize;
+    gobject_class->set_property = ufo_of_ring_pattern_task_set_property;
+    gobject_class->get_property = ufo_of_ring_pattern_task_get_property;
+    gobject_class->finalize = ufo_of_ring_pattern_task_finalize;
 
     properties[PROP_RING_START] =
         g_param_spec_uint ("start",
@@ -349,13 +304,13 @@ ufo_ring_pattern_task_class_init (UfoRingPatternTaskClass *klass)
     for (guint i = PROP_0 + 1; i < N_PROPERTIES; i++)
         g_object_class_install_property (gobject_class, i, properties[i]);
 
-    g_type_class_add_private (gobject_class, sizeof(UfoRingPatternTaskPrivate));
+    g_type_class_add_private (gobject_class, sizeof(UfoOfRingPatternTaskPrivate));
 }
 
 static void
-ufo_ring_pattern_task_init(UfoRingPatternTask *self)
+ufo_of_ring_pattern_task_init(UfoOfRingPatternTask *self)
 {
-    self->priv = UFO_RING_PATTERN_TASK_GET_PRIVATE(self);
+    self->priv = UFO_OF_RING_PATTERN_TASK_GET_PRIVATE(self);
     self->priv->ring_start = 5;
     self->priv->ring_end = 5;
     self->priv->ring_thickness = 13;

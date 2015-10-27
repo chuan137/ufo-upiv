@@ -3,28 +3,11 @@ cmake_minimum_required(VERSION 2.6)
 #{{{ Sources
 
 set(ufofilter_SRCS
-    ufo-fftconvolution-task.c
-    ufo-hessian-kernel-task.c
-    ufo-hessian-analysis-task.c
-    ufo-ring-pattern-task.c
-    ufo-ring-writer-task.c
-    ufo-local-maxima-task.c
-    ufo-blob-test-task.c
-    ufo-label-cluster-task.c
-    ufo-combine-test-task.c
-    ufo-sum-task.c
-    ufo-log-task.c
-    ufo-brightness-cut-task.c
-    ufo-complex-mult-task.c
-    ufo-bilateral-task.c
-    ufo-piv-contrast-task.c
-    ufo-hough-likelihood-task.c
-    ufo-hough-likelihood-image-task.c
-    ufo-candidate-filter-task.c
-    ufo-multi-search-task.c
-    ufo-device-info-task.c
-    ufo-azimuthal-test-task.c
-    ufo-contrast-task.c
+    ufo-ordfilt-task.c
+    ufo-filter-particle-task.c
+    ufo-of-ring-pattern-task.c
+    ufo-get-dup-circ-task.c
+    ufo-concatenate-result-task.c
     )
 
 #}}}
