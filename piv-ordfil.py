@@ -13,7 +13,7 @@ ring_thickness = 4 / scale
 #img_path = '/home/chuan/DATA/upiv/Image0.tif'; xshift = 0; yshfit = 200
 #img_path = '/home/chuan/DATA/upiv/60_Luft_frame50.tif'; xshift = 150; yshift = 0
 #img_path = 'data/image1.tif'; xshift=0; yshift=0
-img_path = 'data/SampleC'; xshift=0; yshift=0
+img_path = 'data/input/SampleC'; xshift=0; yshift=0
 res_tif = './ordfilt.tif'
 res_txt = './res.txt'
 
@@ -29,9 +29,9 @@ denoise_post_HT = pm.get_task('denoise')
 contrast = pm.get_task('contrast')
 contrast_post_HT = pm.get_task('contrast')
 ordfilt = pm.get_task('ordfilt')
-ring_pattern = pm.get_task('ring_pattern')
+ring_pattern = pm.get_task('of-ring_pattern')
 ring_loop = pm.get_task('buffer')
-likelihood = pm.get_task('hough-likelihood')
+filter_particle = pm.get_task('filter-particle')
 ring_writer = pm.get_task('ring_writer')
 
 null = pm.get_task('null')
@@ -47,7 +47,6 @@ duplicater.set_properties(dup_count=ring_count)
 ring_pattern.set_properties(method=1, start=ring_start, end=ring_end, 
                             step=ring_step, thickness=ring_thickness,
                             width=1024/scale, height=1024/scale)
-likelihood.set_properties(masksize=13, maskinnersize=7, threshold=100)
 ring_writer.set_properties(filename=res_txt)
 #ring_loop.set_properties(loop=1, dup_count=ring_count)
 ring_loop.set_properties(loop=1)
@@ -68,10 +67,8 @@ g.connect_nodes(denoise, contrast)
 g.connect_nodes(ring_pattern, ring_loop)
 g.connect_nodes_full(contrast, ordfilt, 0)
 g.connect_nodes_full(ring_loop, ordfilt, 1)
-g.connect_nodes(ordfilt, write)
-# g.connect_nodes(ordfilt,stack)
-# g.connect_nodes(stack,likelihood)
-# g.connect_nodes(likelihood, ring_writer)
+g.connect_nodes(ordfilt, filter_particle)
+g.connect_nodes(filter_particle, ring_writer)
 
 sched = Ufo.Scheduler()
 sched.set_properties(enable_tracing=False)
