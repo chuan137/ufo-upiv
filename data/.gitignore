@@ -1,4 +1,5 @@
 *
 !.gitignore
 !Makefile
-!config*.cfg
+!Makefile.conf
+!*.cfg
