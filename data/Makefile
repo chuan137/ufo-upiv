@@ -1,18 +1,7 @@
-
 SHELL := /bin/bash
 
-BUILD_TIF := contrast hough likelihood
-BUILD_TXT := candidate azimu
-SAMPLES := SampleA SampleB SampleC
+CURRENT_DIR = $(shell pwd)
 SAMPLE_DIRS = $(addprefix $(OUTROOT)/, $(SAMPLES))
-
-OUTROOT := ./output
-DATAROOT := ./input
-SCRIPT := ../piv-test.py
-CONFIG_TMP := tmp.cfg
-OUTPUT_TMP := /dev/null
-OUTPUT_TIF := $(OUTROOT)/output.tif
-CURRENT_DIR := $(shell pwd)
 
 # find all image files and txt files
 IMG_FILES = $(sort $(foreach dd,$(SAMPLES), $(wildcard $(DATAROOT)/$(dd)/*.tif)))
