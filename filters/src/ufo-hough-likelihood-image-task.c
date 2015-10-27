@@ -151,7 +151,9 @@ ufo_hough_likelihood_image_task_process (UfoTask *task,
     profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
     cmd_queue = ufo_gpu_node_get_cmd_queue (node);
 
-    gsize g_work_size[] = { requisition->dims[0], requisition->dims[1] , requisition->dims[2]};
+    gsize g_work_size[] = { requisition->dims[0], requisition->dims[1], 1};
+    if (requisition->n_dims == 3)
+        g_work_size[2] = requisition->dims[2];
     gsize l_work_size[] = { 32, 16, 1};
 
     gsize shift = 6;

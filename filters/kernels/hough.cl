@@ -73,7 +73,7 @@ kernel void likelihood (read_only image3d_t input,
 
     barrier(CLK_LOCAL_MEM_FENCE);
 
-    float mean = 0.0f, std = 0.0f, peak = 0.0f, f;
+    float res, mean = 0.0f, std = 0.0f, peak = 0.0f, f;
 
     for (int a = -maskSizeH; a < maskSizeH + 1; a++) {
         for (int b = -maskSizeH; b < maskSizeH + 1; b++) {
@@ -103,7 +103,7 @@ kernel void likelihood (read_only image3d_t input,
     peak = local_mem[local_tmp_id];
 #endif
 
-    float res = exp((peak - mean)/std);
+    res = exp((peak - mean)/std);
 /*
  *    unsigned idx = glb_x 
  *                   + glb_y * get_global_size(0) 
@@ -191,7 +191,7 @@ kernel void likelihood_image (read_only image3d_t input,
 
     barrier(CLK_LOCAL_MEM_FENCE);
 
-    float mean = 0.0f, std = 0.0f, peak = 0.0f, f;
+    float res, mean = 0.0f, std = 0.0f, peak = 0.0f, f;
 
     for (int a = -maskSizeH; a < maskSizeH + 1; a++) {
         for (int b = -maskSizeH; b < maskSizeH + 1; b++) {
@@ -221,7 +221,7 @@ kernel void likelihood_image (read_only image3d_t input,
     peak = local_mem[local_tmp_id];
 #endif
 
-    float res = exp((peak - mean)/std);
+    res = exp((peak - mean)/std);
     unsigned idx = glb_x 
                    + glb_y * get_global_size(0) 
                    + glb_z * get_global_size(0) * get_global_size(1);
