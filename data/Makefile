@@ -1,5 +1,7 @@
 SHELL := /bin/bash
 
+-include Makefile.conf
+
 CURRENT_DIR = $(shell pwd)
 SAMPLE_DIRS = $(addprefix $(OUTROOT)/, $(SAMPLES))
 
