@@ -10,7 +10,6 @@
 .*.log
 
 doc
-config*py
 *test*.py
 res*
 tmp*
