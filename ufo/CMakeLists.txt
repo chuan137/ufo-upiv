@@ -32,7 +32,7 @@ endif ()
 #}}}
 #{{{ Subdirectories
 
-add_subdirectory(src)
-add_subdirectory(ordfilt)
+add_subdirectory(src_hough)
+add_subdirectory(src_ordfilt)
 
 #}}}
