@@ -1,4 +1,0 @@
-[submodule "paper"]
-	path = paper
-	url = git@github.com:chuan137/upiv-paper.git
-    ignore = all
