@@ -1,7 +1,12 @@
-from gi.repository import Ufo
+import sys
 import types
+from gi.repository import Ufo
 
 class TaskGraph(Ufo.TaskGraph):
+    def __init__(self):
+        super(TaskGraph, self).__init__()
+        self.tasks = {}
+
     def connect_branch(self, node_list):
         if len(node_list) > 1:
             for i in range(len(node_list)-1):
@@ -22,8 +27,17 @@ class TaskGraph(Ufo.TaskGraph):
         self.connect_nodes_full(nlist1[-1], nlist3[0], 0)
         self.connect_nodes_full(nlist2[-1], nlist3[0], 1)
 
+    def branch(self, *args):
+        try:
+            b = [self.tasks[n] for n in args]
+            self.connect_branch(b)
+        except KeyError:
+            sys.exit("task %s does not exists" % n)
+        return b
+
 class PluginManager(Ufo.PluginManager):
     def get_task(self, task, **kwargs):
         t = super(PluginManager, self).get_task(task)
         t.set_properties(**kwargs)
         return t
+

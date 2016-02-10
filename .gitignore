@@ -12,8 +12,7 @@
 doc
 *test*.py
 res*
-tmp*
-_tmp*
+*tmp*
 Notes.md
-
+output
 
