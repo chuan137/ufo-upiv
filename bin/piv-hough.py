@@ -10,7 +10,7 @@ from gi.repository import Ufo
 from upiv.ufo_extension import TaskGraph, PluginManager
 from upiv.ddict import DotDict
 
-#{{{ parameters
+#{{{ read_parameters
 def read_parameters():
     # parse command line arguments
     parser = argparse.ArgumentParser()
@@ -20,9 +20,9 @@ def read_parameters():
 
     # config file
     config_file = os.path.join(prj_root, 'config', 'hough_%s.cfg' % args.dataset)
+    cf_parser = ConfigParser.ConfigParser()
 
     # parse configuration file
-    cf_parser = ConfigParser.ConfigParser()
     if cf_parser.read(config_file) != []:
         print "Configuration: ", config_file
         parms = {k: eval(v) for k,v in cf_parser.items('parms')}
@@ -37,8 +37,8 @@ def read_parameters():
 
     return DotDict(parms), DotDict(config)
 #}}}
-#{{{ filters
-def mk_filters(parms):
+#{{{ load_filters
+def load_filters(parms):
     filters = DotDict({})
     scale = parms.scale
     parms.ring_number = (parms.ring_end - parms.ring_start) / parms.ring_step
@@ -156,7 +156,7 @@ def mk_filters(parms):
 
 def main():
     parms, config = read_parameters()
-    filters = mk_filters(parms)
+    filters = load_filters(parms)
 
     pm = PluginManager()
     g = TaskGraph()
