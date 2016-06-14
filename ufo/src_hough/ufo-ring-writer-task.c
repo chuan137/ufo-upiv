@@ -56,6 +56,8 @@ ufo_ring_writer_task_setup (UfoTask *task,
 {
     UfoRingWriterTaskPrivate *priv = UFO_RING_WRITER_TASK_GET_PRIVATE (task);
     priv->fp = fopen(priv->filename, "w");
+    if (! priv->fp)
+      g_error ("fail to open file %s", priv->filename);
 }
 
 static void
