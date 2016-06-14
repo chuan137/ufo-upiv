@@ -7,7 +7,7 @@ class TaskGraph(Ufo.TaskGraph):
         super(TaskGraph, self).__init__()
         self.tasks = {}
 
-    def connect_branch(self, node_list):
+    def _connect_branch(self, node_list):
         if len(node_list) > 1:
             for i in range(len(node_list)-1):
                 self.connect_nodes(node_list[i], node_list[i+1])
@@ -21,16 +21,16 @@ class TaskGraph(Ufo.TaskGraph):
         if type(nlist3) is not list:
             nlist3 = [nlist3]
 
-        self.connect_branch(nlist1)
-        self.connect_branch(nlist2)
-        self.connect_branch(nlist3)
+        self._connect_branch(nlist1)
+        self._connect_branch(nlist2)
+        self._connect_branch(nlist3)
         self.connect_nodes_full(nlist1[-1], nlist3[0], 0)
         self.connect_nodes_full(nlist2[-1], nlist3[0], 1)
 
     def branch(self, *args):
         try:
             b = [self.tasks[n] for n in args]
-            self.connect_branch(b)
+            self._connect_branch(b)
         except KeyError:
             sys.exit("task %s does not exists" % n)
         return b
