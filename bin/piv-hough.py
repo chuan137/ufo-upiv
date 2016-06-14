@@ -1,15 +1,14 @@
 #!/usr/bin/env python
 import os
 import sys
+prj_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, prj_root)
+
 import argparse
 import ConfigParser
 from gi.repository import Ufo
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../python'))
-from ufo_extension import TaskGraph, PluginManager
-from ddict import DotDict
-
-prj_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+from upiv.ufo_extension import TaskGraph, PluginManager
+from upiv.ddict import DotDict
 
 #{{{ parameters
 def read_parameters():

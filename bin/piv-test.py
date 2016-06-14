@@ -7,7 +7,7 @@ import os
 import logging
 import argparse
 import ConfigParser
-from python.pivjob import PivJob
+from upiv.pivjob import PivJob
 
 logfile = '.hough.log'
 logging.basicConfig(level=logging.DEBUG, filename=logfile, filemode='w', 
